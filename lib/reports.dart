@@ -72,7 +72,6 @@ class _ReportsAnalyticsPageState extends State<ReportsAnalyticsPage> {
 
   List<PerformanceReview> _reviews = [];
   bool _loadingList = true;
-  bool _dataFetched = false;
 
   int workProgress = 0;
   int leaveUsed = 0;
@@ -82,24 +81,25 @@ class _ReportsAnalyticsPageState extends State<ReportsAnalyticsPage> {
   @override
   void initState() {
     super.initState();
-    if (!_dataFetched) {
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      final empId = userProvider.employeeId ?? '';
-
-      if (empId.isNotEmpty) {
-        fetchPerformanceReviews(empId);
-        fetchWorkProgress(empId);
-        fetchLeaveStats(empId);
-        _dataFetched = true;
-      }
-    }
+    fetchPerformanceReviews();
+    fetchWorkProgress();
+    fetchLeaveStats();
   }
 
   // ✅ Fetch performance list
-  Future<void> fetchPerformanceReviews(String empId) async {
+  Future<void> fetchPerformanceReviews([String? empId]) async {
     setState(() => _loadingList = true);
     try {
-      final uri = Uri.parse('$apiBase$listPath/employee/$empId');
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final employeeId = empId ?? userProvider.employeeId;
+
+      if (employeeId == null || employeeId.isEmpty) {
+        _showSnack("No employee logged in");
+        setState(() => _loadingList = false);
+        return;
+      }
+
+      final uri = Uri.parse('$apiBase$listPath/employee/$employeeId');
       final response = await http.get(
         uri,
         headers: {'Accept': 'application/json'},
@@ -144,66 +144,35 @@ class _ReportsAnalyticsPageState extends State<ReportsAnalyticsPage> {
     return null;
   }
 
-  // ✅ updated sendDecision method (with reviewId)
-Future<void> _sendDecision({
-  required PerformanceReview review,
-  required Map<String, dynamic> reviewData,
-  required String decision,
-  required String? comment,
-}) async {
-  final userProvider = Provider.of<UserProvider>(context, listen: false);
-  final reviewedBy = review.reviewedBy.trim().toLowerCase();
+  // ✅ Send decision helper
+  Future<void> _sendDecision({
+    required String decision,
+    required String comment,
+    required Map<String, dynamic> reviewData,
+    required PerformanceReview review,
+  }) async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
 
-  // Decide recipients based on who reviewed
-  List<String> targets = [];
-  if (reviewedBy == "admin") {
-    targets = ["Admin", "Super Admin"];
-  } else if (reviewedBy == "super admin") {
-    targets = ["Super Admin"];
-  } else {
-    targets = [review.reviewedBy]; // fallback
-  }
+    final body = json.encode({
+      "employeeId": userProvider.employeeId,
+      "employeeName": reviewData['empName'],
+      "position": reviewData['position'] ?? "employee",
+      "decision": decision,
+      "comment": comment,
+      "sendTo": ["hr"], // you can adjust this target
+      "reviewId": review.id, // ✅ include reviewId
+    });
 
-  final uri = Uri.parse('$apiBase/review-decision');
-  final body = json.encode({
-    "employeeId": userProvider.employeeId,
-    "employeeName": reviewData['empName'],
-    "position": reviewData['position'] ?? "employee",
-    "decision": decision,
-    "comment": comment,
-    "sendTo": targets,
-    "reviewId": review.id, // ✅ send reviewId to backend
-  });
-
-  try {
-    final response = await http.post(
-      uri,
+    await http.post(
+      Uri.parse('$apiBase/review-decision'),
       headers: {"Content-Type": "application/json"},
       body: body,
     );
-
-    if (response.statusCode == 201) {
-      debugPrint("Decision sent successfully");
-
-      // Update local status too
-      final updatedStatus = decision == "agree" ? "Agreed" : "Disagreed";
-      setState(() {
-        final index = _reviews.indexWhere((r) => r.id == review.id);
-        if (index != -1) {
-          _reviews[index].status = updatedStatus;
-        }
-      });
-    } else {
-      debugPrint("Failed to send decision: ${response.body}");
-    }
-  } catch (e) {
-    debugPrint("Error sending decision: $e");
   }
-}
-
 
   // ✅ Show review details with Agree & Disagree
   Future<void> _showReviewDetails(PerformanceReview review) async {
+    final isFinal = review.status == "Agreed" || review.status == "Disagreed";
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -216,8 +185,6 @@ Future<void> _sendDecision({
     if (reviewData != null && mounted) {
       final reviewedAt = reviewData['reviewedAt'] ?? reviewData['createdAt'];
       final flagColor = _getFlagTextColor(review.flag);
-      final reviewIndex = _reviews.indexWhere((r) => r.id == review.id);
-      if (reviewIndex == -1) return;
 
       await showDialog(
         context: context,
@@ -282,8 +249,7 @@ Future<void> _sendDecision({
                         ),
                         _detailRow(
                           "Business",
-                          reviewData['businessKnowledge'] ??
-                              reviewData['business'],
+                          reviewData['business'],
                           textColor: Colors.black,
                         ),
                         _detailRow("Flag", review.flag, textColor: flagColor),
@@ -293,62 +259,59 @@ Future<void> _sendDecision({
                           textColor: Colors.black,
                         ),
                         const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            TextButton(
-                              onPressed: () async {
-                                final comment = await _askComment(
-                                  "Reason for Agree",
-                                );
-                                if (comment == null) return;
+                        if (!isFinal)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              // ✅ Agree
+                              TextButton(
+                                onPressed: () async {
+                                  final comment = await _askComment(
+                                    "Reason for Agree (Optional)",
+                                  );
+                                  if (comment == null) return;
 
-                                await _sendDecision(
-                                  review: review,
-                                  reviewData: reviewData,
-                                  decision: "agree",
-                                  comment: comment,
-                                );
+                                  await _sendDecision(
+                                    decision: "agree",
+                                    comment: comment,
+                                    reviewData: reviewData,
+                                    review: review,
+                                  );
 
-                                setState(() {
-                                  _reviews[reviewIndex].status = "Agreed";
-                                });
-
-                                Navigator.pop(context);
-                              },
-                              child: const Text(
-                                "Agree",
-                                style: TextStyle(color: Colors.green),
+                                  await fetchPerformanceReviews(); // ✅ refresh from backend
+                                  if (mounted) Navigator.pop(context);
+                                },
+                                child: const Text(
+                                  "Agree",
+                                  style: TextStyle(color: Colors.green),
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            TextButton(
-                              onPressed: () async {
-                                final comment = await _askComment(
-                                  "Reason for Disagree",
-                                );
-                                if (comment == null) return;
+                              const SizedBox(width: 8),
+                              // ❌ Disagree
+                              TextButton(
+                                onPressed: () async {
+                                  final comment = await _askComment(
+                                    "Reason for Disagree (Optional)",
+                                  );
+                                  if (comment == null) return;
 
-                                await _sendDecision(
-                                  review: review,
-                                  reviewData: reviewData,
-                                  decision: "disagree",
-                                  comment: comment,
-                                );
+                                  await _sendDecision(
+                                    decision: "disagree",
+                                    comment: comment,
+                                    reviewData: reviewData,
+                                    review: review,
+                                  );
 
-                                setState(() {
-                                  _reviews[reviewIndex].status = "Disagreed";
-                                });
-
-                                Navigator.pop(context);
-                              },
-                              child: const Text(
-                                "Disagree",
-                                style: TextStyle(color: Colors.red),
+                                  await fetchPerformanceReviews(); // ✅ refresh
+                                  if (mounted) Navigator.pop(context);
+                                },
+                                child: const Text(
+                                  "Disagree",
+                                  style: TextStyle(color: Colors.red),
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
                       ],
                     ),
                   ),
@@ -369,7 +332,9 @@ Future<void> _sendDecision({
             title: Text(title),
             content: TextField(
               controller: controller,
-              decoration: const InputDecoration(hintText: "Enter comment"),
+              decoration: const InputDecoration(
+                hintText: "Enter comment (optional)",
+              ),
             ),
             actions: [
               TextButton(
@@ -386,8 +351,8 @@ Future<void> _sendDecision({
   }
 
   // ---------------- Fetch stats ----------------
-  Future<void> fetchWorkProgress(String empId) async {
-    var url = Uri.parse('$apiBase/todo_planner/todo/progress/$empId');
+  Future<void> fetchWorkProgress() async {
+    var url = Uri.parse('$apiBase/todo_planner/todo/progress');
     try {
       var response = await http.get(url);
       if (response.statusCode == 200) {
@@ -399,30 +364,16 @@ Future<void> _sendDecision({
     } catch (_) {}
   }
 
-  Future<void> fetchLeaveStats(String empId) async {
-    var url = Uri.parse('$apiBase/apply/leave-balance/$empId');
+  Future<void> fetchLeaveStats() async {
+    var url = Uri.parse('$apiBase/apply/leave-stats');
     try {
       var response = await http.get(url);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final balances = data['balances'] ?? {};
-
-        int totalUsed =
-            (balances['casual']?['used'] ?? 0) +
-            (balances['sick']?['used'] ?? 0) +
-            (balances['sad']?['used'] ?? 0);
-
         setState(() {
-          leaveUsed = totalUsed;
-          int totalLeaves =
-              (balances['casual']?['total'] ?? 0) +
-              (balances['sick']?['total'] ?? 0) +
-              (balances['sad']?['total'] ?? 0);
-
-          double percent =
-              totalLeaves > 0 ? (leaveUsed / totalLeaves) * 100 : 0;
-          leavePercent = percent.toStringAsFixed(0);
-          presentPercent = (100 - percent).toStringAsFixed(0);
+          leaveUsed = data['totalLeavesUsed'];
+          leavePercent = data['leavePercentage'];
+          presentPercent = data['presentPercentage'];
         });
       }
     } catch (_) {}
@@ -583,7 +534,15 @@ Future<void> _sendDecision({
                     style: const TextStyle(color: Colors.white70),
                   ),
                 ),
-                DataCell(buildFlagCell(latestReview.flag)), // ✅ merged UI
+                DataCell(
+                  Text(
+                    latestReview.flag,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: _getFlagTextColor(latestReview.flag),
+                    ),
+                  ),
+                ),
                 DataCell(
                   GestureDetector(
                     onTap: () async {
@@ -612,35 +571,7 @@ Future<void> _sendDecision({
     );
   }
 
-  // ✅ Flag cell with icon + color
-  Widget buildFlagCell(String? flagValue) {
-    String flag = (flagValue ?? '').toLowerCase();
-    Color color;
-    IconData icon = Icons.flag;
-
-    if (flag.contains('red')) {
-      color = Colors.red;
-    } else if (flag.contains('yellow')) {
-      color = Colors.amber;
-    } else if (flag.contains('green')) {
-      color = Colors.green;
-    } else {
-      color = Colors.grey;
-    }
-
-    return Row(
-      children: [
-        Icon(icon, color: color, size: 18),
-        const SizedBox(width: 6),
-        Text(
-          flagValue ?? 'Unknown',
-          style: TextStyle(color: color, fontWeight: FontWeight.bold),
-        ),
-      ],
-    );
-  }
-
-  // ✅ Keep fallback flag text color (for popup bar color)
+  // ✅ Flag text color
   Color _getFlagTextColor(String flag) {
     final normalized = flag.toLowerCase().replaceAll(" flag", "").trim();
     switch (normalized) {
@@ -680,7 +611,7 @@ Future<void> _sendDecision({
       return iso.toString();
     }
   }
-
+//changed
   void _showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));

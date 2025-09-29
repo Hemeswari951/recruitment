@@ -1,8 +1,11 @@
+//adminperformance.dart
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 import 'admin_notification.dart';
+import 'package:provider/provider.dart';
+import 'user_provider.dart';
 import 'sidebar.dart';
 
 class PerformanceReviewPage extends StatefulWidget {
@@ -17,11 +20,12 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
   String selectedEmpName = "EMP NAME";
 
   final Map<String, String> empMap = {
-    "ZeAI107": "Udaykiran",
-    "ZeAI108": "Hariprasad",
-    "ZeAI111": "Vishal",
-    "ZeAI116": "Gowsalya",
-    "ZeAI124": "Manojkumar",
+    "ZeAI107": "Udaykiran M",
+    "ZeAI108": "Hariprasad B",
+    "ZeAI111": "Vishal G",
+    "ZeAI116": "Gowsalya S",
+    "ZeAI124": "Manojkumar R",
+    "ZeAI026": "SABARIRAJA R",
   };
   late final Map<String, String> nameToIdMap;
 
@@ -37,6 +41,8 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
   TextEditingController attitudeController = TextEditingController();
   TextEditingController technicalKnowledgeController = TextEditingController();
   TextEditingController businessKnowledgeController = TextEditingController();
+
+  bool _isloading = false;
 
   @override
   void initState() {
@@ -78,6 +84,13 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
     }
 
     final url = Uri.parse('http://localhost:5000/reviews');
+    // ignore: unnecessary_null_comparison
+    setState(() => _isloading = true);
+
+    final reviewerName =
+        Provider.of<UserProvider>(context, listen: false).employeeName ??
+        'Admin';
+
     final body = {
       "empId": selectedEmpId,
       "empName": selectedEmpName,
@@ -85,7 +98,7 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
       "attitude": attitudeController.text,
       "technicalKnowledge": technicalKnowledgeController.text,
       "business": businessKnowledgeController.text,
-      "reviewedBy": "admin",
+      "reviewedBy": reviewerName,
       "flag": selectedFlag,
     };
 
@@ -105,21 +118,45 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
           ),
         );
 
-        // 🔔 Add notification
+        // 🔔 Add notifications (one for employee, one for admin)
         String currentMonth = getCurrentMonth();
         final notifUrl = Uri.parse("http://localhost:5000/notifications");
-        final notifBody = {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        final adminId = userProvider.employeeId ?? 'admin';
+        final adminName = userProvider.employeeName ?? 'Admin';
+
+        // 1. Notification for the Employee
+        final employeeNotifBody = {
           "month": currentMonth,
           "category": "performance",
-          "message":
-              "Performance review for $selectedEmpName ($selectedEmpId) - $currentMonth",
+          "message": "Performance received from ($adminName)",
           "empId": selectedEmpId,
+          "senderId": adminId,
+          "senderName": adminName,
           "flag": selectedFlag,
         };
+
+        // 2. Notification for the Admin
+        final adminNotifBody = {
+          "month": currentMonth,
+          "category": "performance",
+          "message": "Performance sent to ($selectedEmpName)",
+          "empId": adminId, // Sent to the admin themselves
+          "senderId": adminId,
+          "senderName": adminName,
+          "flag": selectedFlag,
+        };
+
+        // Send both notifications
         await http.post(
           notifUrl,
           headers: {"Content-Type": "application/json"},
-          body: jsonEncode(notifBody),
+          body: jsonEncode(employeeNotifBody),
+        );
+        await http.post(
+          notifUrl,
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(adminNotifBody),
         );
 
         // ✅ Reset form
@@ -206,8 +243,9 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
                       (val) {
                         setState(() {
                           selectedEmpName = val!;
-                          selectedEmpId =
-                              val == "EMP NAME" ? "EMP ID" : nameToIdMap[val]!;
+                          selectedEmpId = val == "EMP NAME"
+                              ? "EMP ID"
+                              : nameToIdMap[val]!;
                         });
                       },
                       160,
@@ -240,29 +278,28 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
                         color: Colors.white,
                       ),
                       style: TextStyle(color: flagColors[selectedFlag]),
-                      items:
-                          flagColors.keys.map((String val) {
-                            return DropdownMenuItem(
-                              value: val,
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 10,
-                                    height: 10,
-                                    decoration: BoxDecoration(
-                                      color: flagColors[val],
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    val,
-                                    style: TextStyle(color: flagColors[val]),
-                                  ),
-                                ],
+                      items: flagColors.keys.map((String val) {
+                        return DropdownMenuItem(
+                          value: val,
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: flagColors[val],
+                                  shape: BoxShape.circle,
+                                ),
                               ),
-                            );
-                          }).toList(),
+                              const SizedBox(width: 6),
+                              Text(
+                                val,
+                                style: TextStyle(color: flagColors[val]),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
                       onChanged: (val) {
                         setState(() {
                           selectedFlag = val!;
@@ -299,26 +336,41 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
             // 🔹 Send Button
             Align(
               alignment: Alignment.centerRight,
-              child: ElevatedButton.icon(
-                onPressed: submitReview,
-                icon: const Icon(Icons.send),
-                label: const Text("Send"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
+              child: _buildActionButtons(),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    final reviewerName =
+        Provider.of<UserProvider>(context, listen: false).employeeName ??
+        'Admin';
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            const Text("Reviewed by", style: TextStyle(color: Colors.white70)),
+            Text(
+              reviewerName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(width: 20),
+        ElevatedButton.icon(
+          onPressed: _isloading ? null : submitReview,
+          icon: const Icon(Icons.send),
+          label: const Text("Send"),
+        ),
+      ],
     );
   }
 
@@ -374,18 +426,14 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
           value: value,
           icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
           style: const TextStyle(color: Colors.white),
-          items:
-              items
-                  .map(
-                    (String val) => DropdownMenuItem(
-                      value: val,
-                      child: Text(
-                        val,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  )
-                  .toList(),
+          items: items
+              .map(
+                (String val) => DropdownMenuItem(
+                  value: val,
+                  child: Text(val, style: const TextStyle(color: Colors.white)),
+                ),
+              )
+              .toList(),
           onChanged: enabled ? onChanged : null,
         ),
       ),

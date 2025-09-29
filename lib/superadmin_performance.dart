@@ -3,6 +3,8 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 import 'admin_notification.dart';
+import 'user_provider.dart';
+import 'package:provider/provider.dart';
 import 'sidebar.dart';
 
 class SuperadminPerformancePage extends StatefulWidget {
@@ -19,7 +21,7 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
 
   final Map<String, String> empMap = {
     "ZeAI102": "Nivetha S",
-    "ZeAI112": "Hemeswari D",
+    "ZeAI002": "Hemeswari ",
     "ZeAI115": "Srivatsini R",
   };
   late final Map<String, String> nameToIdMap;
@@ -36,6 +38,8 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
   TextEditingController attitudeController = TextEditingController();
   TextEditingController technicalKnowledgeController = TextEditingController();
   TextEditingController businessKnowledgeController = TextEditingController();
+
+  bool _isloading = false;
 
   @override
   void initState() {
@@ -77,6 +81,12 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
     }
 
     final url = Uri.parse('http://localhost:5000/reviews');
+    setState(() => _isloading = true);
+
+    final reviewerName =
+        Provider.of<UserProvider>(context, listen: false).employeeName ??
+        'Admin';
+
     final body = {
       "empId": selectedEmpId,
       "empName": selectedEmpName,
@@ -84,7 +94,7 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
       "attitude": attitudeController.text,
       "technicalKnowledge": technicalKnowledgeController.text,
       "business": businessKnowledgeController.text,
-      "reviewedBy": "admin",
+      "reviewedBy": reviewerName,
       "flag": selectedFlag,
     };
 
@@ -104,21 +114,45 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
           ),
         );
 
-        // 🔔 Add notification
+        // 🔔 Add notifications (one for employee, one for admin)
         String currentMonth = getCurrentMonth();
         final notifUrl = Uri.parse("http://localhost:5000/notifications");
-        final notifBody = {
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        final adminId = userProvider.employeeId ?? 'superadmin';
+        final adminName = userProvider.employeeName ?? 'Super Admin';
+
+        // 1. Notification for the Employee
+        final employeeNotifBody = {
           "month": currentMonth,
           "category": "performance",
-          "message":
-              "Performance review for $selectedEmpName ($selectedEmpId) - $currentMonth",
+          "message": "Performance received from ($adminName)",
           "empId": selectedEmpId,
+          "senderId": adminId,
+          "senderName": adminName,
           "flag": selectedFlag,
         };
+
+        // 2. Notification for the Admin
+        final adminNotifBody = {
+          "month": currentMonth,
+          "category": "performance",
+          "message": "Performance sent to ($selectedEmpName)",
+          "empId": adminId, // Sent to the admin themselves
+          "senderId": adminId,
+          "senderName": adminName,
+          "flag": selectedFlag,
+        };
+
+        // Send both notifications
         await http.post(
           notifUrl,
           headers: {"Content-Type": "application/json"},
-          body: jsonEncode(notifBody),
+          body: jsonEncode(employeeNotifBody),
+        );
+        await http.post(
+          notifUrl,
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(adminNotifBody),
         );
 
         // ✅ Reset form
@@ -145,6 +179,7 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
         // ❌ Duplicate review → stay on same page
         final data = jsonDecode(response.body);
         ScaffoldMessenger.of(context).showSnackBar(
+          // ignore: prefer_interpolation_to_compose_strings
           SnackBar(
             content: Text("⚠ ${data['message']}"),
             backgroundColor: Colors.orange,
@@ -166,6 +201,9 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
           backgroundColor: Colors.redAccent,
         ),
       );
+    } finally {
+      // Ensure loading state is reset even if an error occurs
+      setState(() => _isloading = false);
     }
   }
 
@@ -205,8 +243,9 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
                       (val) {
                         setState(() {
                           selectedEmpName = val!;
-                          selectedEmpId =
-                              val == "EMP NAME" ? "EMP ID" : nameToIdMap[val]!;
+                          selectedEmpId = val == "EMP NAME"
+                              ? "EMP ID"
+                              : nameToIdMap[val]!;
                         });
                       },
                       160,
@@ -239,29 +278,28 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
                         color: Colors.white,
                       ),
                       style: TextStyle(color: flagColors[selectedFlag]),
-                      items:
-                          flagColors.keys.map((String val) {
-                            return DropdownMenuItem(
-                              value: val,
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 10,
-                                    height: 10,
-                                    decoration: BoxDecoration(
-                                      color: flagColors[val],
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    val,
-                                    style: TextStyle(color: flagColors[val]),
-                                  ),
-                                ],
+                      items: flagColors.keys.map((String val) {
+                        return DropdownMenuItem(
+                          value: val,
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: flagColors[val],
+                                  shape: BoxShape.circle,
+                                ),
                               ),
-                            );
-                          }).toList(),
+                              const SizedBox(width: 6),
+                              Text(
+                                val,
+                                style: TextStyle(color: flagColors[val]),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
                       onChanged: (val) {
                         setState(() {
                           selectedFlag = val!;
@@ -298,26 +336,41 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
             // 🔹 Send Button
             Align(
               alignment: Alignment.centerRight,
-              child: ElevatedButton.icon(
-                onPressed: submitReview,
-                icon: const Icon(Icons.send),
-                label: const Text("Send"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
+              child: _buildActionButtons(),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildActionButtons() {
+    final reviewerName =
+        Provider.of<UserProvider>(context, listen: false).employeeName ??
+        'Admin';
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            const Text("Reviewed by", style: TextStyle(color: Colors.white70)),
+            Text(
+              reviewerName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(width: 20),
+        ElevatedButton.icon(
+          onPressed: _isloading ? null : submitReview,
+          icon: const Icon(Icons.send),
+          label: const Text("Send"),
+        ),
+      ],
     );
   }
 
@@ -373,18 +426,14 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
           value: value,
           icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
           style: const TextStyle(color: Colors.white),
-          items:
-              items
-                  .map(
-                    (String val) => DropdownMenuItem(
-                      value: val,
-                      child: Text(
-                        val,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  )
-                  .toList(),
+          items: items
+              .map(
+                (String val) => DropdownMenuItem(
+                  value: val,
+                  child: Text(val, style: const TextStyle(color: Colors.white)),
+                ),
+              )
+              .toList(),
           onChanged: enabled ? onChanged : null,
         ),
       ),
