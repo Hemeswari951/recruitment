@@ -48,7 +48,7 @@ router.post('/:id', upload.single('file'), async (req, res) => {
     update[`profileDocs.${docType}`] = filePath;
  
     const employee = await Profile.findOneAndUpdate(
-      { id: id},
+      { id },
       { $set: update },
       { new: true }
     );

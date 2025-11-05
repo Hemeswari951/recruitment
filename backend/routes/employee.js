@@ -140,6 +140,39 @@ router.get("/employees", async (req, res) => {
   }
 });
 
+// ✅ Get employees by domain (for TL performance reviews)
+router.get("/employees/domain/:domain", async (req, res) => {
+  try {
+    const { domain } = req.params;
+    const employees = await Employee.find(
+      {
+        domain: domain,
+        position: { $in: [/^employee$/i, /^intern$/i, /^tech trainee$/i] }, // ✅ Case-insensitive
+      },
+      "employeeId employeeName" // Select only these fields
+    );
+    res.json(employees);
+  } catch (err) {
+    res.status(500).json({ message: "❌ Server error fetching employees by domain" });
+  }
+});
+
+// ✅ Get employees for Superadmin/HR review (only employees and interns)
+router.get("/employees/for-review", async (req, res) => {
+  try {
+    const employees = await Employee.find(
+      {
+        position: { $in: [/^TL$/i, /^Admin$/i] }, // Case-insensitive
+      },
+      "employeeId employeeName" // Select only these fields
+    );
+    res.json(employees);
+  } catch (err) {
+    res.status(500).json({ message: "❌ Server error fetching employees for review" });
+  }
+});
+
+
 // ✅ Get single employee
 router.get("/employees/:employeeId", async (req, res) => {
   try {

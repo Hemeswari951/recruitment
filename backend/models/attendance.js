@@ -1,29 +1,63 @@
 // models/attendance.js
 const mongoose = require("mongoose");
 
-const AttendanceSchema = new mongoose.Schema(
+const attendanceSchema = new mongoose.Schema(
   {
-    employeeId: { type: String, required: true },
-
-    // ✅ Store date as STRING so it always follows DD-MM-YYYY format
-    date: { type: String, required: true },
-
-    status: {
+    employeeId: {
       type: String,
-      enum: ["Absent", "Login", "Logout"], // ✅ "Absent" still included
-      default: "Absent",
+      required: true,
+      trim: true,
     },
 
-    // ✅ Times are kept as strings since you already send formatted times from frontend
-    loginTime: { type: String, default: "Not logged in yet" },
-    logoutTime: { type: String, default: "Not logged out yet" },
-    breakTime: { type: String, default: "-" }, // ✅ Added breakTime
+    // ✅ Always store date as DD-MM-YYYY string (to match frontend)
+    date: {
+      type: String,
+      required: true,
+      trim: true,
+    },
 
-    // ✅ Reasons stay as simple strings
-    loginReason: { type: String, default: "-" },
-    logoutReason: { type: String, default: "-" },
+    // ✅ Time fields as formatted strings (e.g. "09:02:45 AM")
+    loginTime: {
+      type: String,
+      default: "",
+    },
+    logoutTime: {
+      type: String,
+      default: "",
+    },
+
+    // ✅ Reasons — keep optional but default to "-"
+    loginReason: {
+      type: String,
+      default: "-",
+      trim: true,
+    },
+    logoutReason: {
+      type: String,
+      default: "-",
+      trim: true,
+    },
+
+    // ✅ Stores all breaks (e.g. "10:15 AM to 10:30 AM (15 mins), 1:00 PM to 1:10 PM (10 mins) (Total: 25 mins)")
+    breakTime: {
+      type: String,
+      default: "-",
+    },
+
+    // ✅ Temporary field used while a break is in progress
+    breakInProgress: {
+      type: String,
+      default: null, // null when not on break
+    },
+
+    // ✅ Dynamic attendance state
+    status: {
+      type: String,
+      enum: ["None", "Login", "Logout", "Break"],
+      default: "None",
+    },
   },
-  { timestamps: true } // ✅ Adds createdAt & updatedAt for sorting history
+  { timestamps: true } // ✅ createdAt & updatedAt for sorting
 );
 
-module.exports = mongoose.model("Attendance", AttendanceSchema);
+module.exports = mongoose.model("Attendance", attendanceSchema);

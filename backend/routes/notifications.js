@@ -1,29 +1,42 @@
 const express = require('express');
 const router = express.Router();
 const Notification = require("../models/notifications");
+//const mongoose = require('mongoose');
+
+
+
+
+
 
 // 🔹 Get ALL notifications for a specific employee with optional month & category filter
 router.get('/employee/:empId', async (req, res) => {
   try {
     const { empId } = req.params;
-    const { month, category } = req.query;
+    const { month, category } = req.query; // 🔹 Accept query params
 
     const query = {
       $or: [
-        { empId },
+        { empId }, 
         { empId: null },
         { empId: "" }
       ]
     };
 
     if (month) {
-      query.month = { $regex: new RegExp(month, 'i') }; // partial match
-    }
-    if (category) {
-      query.category = { $regex: new RegExp(category, 'i') }; // flexible match
+      query.month = { $regex: new RegExp(`^${month}$`, 'i') };
     }
 
-    const notifications = await Notification.find(query).sort({ createdAt: -1 });
+    if (category) {
+      query.category = { $regex: new RegExp(`^${category}$`, 'i') };
+    }
+    // const notifications = await Notification.find({
+      const notifications = await Notification.find(query).sort({ createdAt: -1 });
+    //   $or: [
+    //     { empId },       // employee-specific
+    //     { empId: null }, // global
+    //     { empId: "" }    // global empty
+    //   ]
+    // }).sort({ createdAt: -1 });
 
     if (!notifications.length) {
       return res.status(404).json({ message: "No notifications found for this employee" });
@@ -35,7 +48,6 @@ router.get('/employee/:empId', async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
 
 // 🔹 HOLIDAYS
 // Employee holidays
@@ -89,21 +101,22 @@ router.get('/holiday/admin/:month', async (req, res) => {
   }
 });
 
-
-// PERFORMANCE
-
-
-// Admin performance
-router.get('/performance/admin/:month', async (req, res) => {
-  const { month } = req.params;
+// Performance → Admin view
+router.get('/performance/admin/:month/:empId', async (req, res) => {
+  const { month, empId } = req.params;
   try {
     const notifications = await Notification.find({
       category: "performance",
-      month: { $regex: new RegExp(month, 'i') }
-    }).sort({ createdAt: -1 });
+      month: { $regex: new RegExp(`^${month}$`, 'i') },
+      $or: [
+        { empId },       // admin-specific
+        { empId: null }, // global
+        { empId: "" }    // global
+      ]
+    });
 
     if (!notifications.length) {
-      return res.status(404).json({ message: 'No performance notifications for admin' });
+      return res.status(404).json({ message: 'No performance notifications for this admin' });
     }
 
     res.json(notifications);
@@ -113,19 +126,21 @@ router.get('/performance/admin/:month', async (req, res) => {
   }
 });
 
-// Employee performance
+// 3️⃣ Performance → Employee view
+// ✅ Get notifications for a SPECIFIC EMPLOYEE (Employee view)
+//router.get('/:month/:empId', async (req, res) => {
 router.get('/performance/employee/:month/:empId', async (req, res) => {
   const { month, empId } = req.params;
   try {
     const notifications = await Notification.find({
       category: "performance",
-      month: { $regex: new RegExp(month, 'i') },
+      month: { $regex: new RegExp(`^${month}$`, 'i') },
       $or: [
-        { empId },
-        { empId: null },
-        { empId: "" }
+        { empId },      // employee-specific
+        { empId: null }, // global notifications
+        { empId: "" }   // also allow empty empId for global
       ],
-    }).sort({ createdAt: -1 });
+    });
 
     if (!notifications.length) {
       return res.status(404).json({ message: "No performance notifications for this employee" });
@@ -138,27 +153,21 @@ router.get('/performance/employee/:month/:empId', async (req, res) => {
   }
 });
 
-
-
-//  ADD Notification
-
+// ✅ Add a new notification
 router.post('/', async (req, res) => {
   try {
-    const { month, category, message, empId, senderName, senderId, flag } = req.body;
-
-    if (!message || !empId || !category) {
-      return res.status(400).json({ message: "Required fields missing" });
+    const { month, category, message, empId, senderName, senderId,flag} = req.body;
+   // if (!senderName || !senderId || !message) {
+   if (!message || !empId || !category) { // only required fields
+      return res.status(400).json({ message: "Sender info is required" });
     }
+    const newNotification = new Notification({ month, category, message, empId,
+      //senderName,  // 🔴 red
+      //senderId,
+    senderName: senderName || "", // optional
+    senderId: senderId || "",
+    flag: flag || ""     });
 
-    const newNotification = new Notification({
-      month,
-      category,
-      message,
-      empId,
-      senderName: senderName || "",
-      senderId: senderId || "",
-      flag: flag || ""
-    });
 
     await newNotification.save();
     res.status(201).json({ message: 'Notification added successfully' });

@@ -17,7 +17,34 @@ const employeeSchema = new mongoose.Schema({
   domain: { type: String, required: true, trim: true },      // from addemployee
   employeeImage: { type: String, default: null },            // from addemployee
 
- 
+  // // 🔹 Additional details from original employee.js
+  // full_name: { type: String },
+  // date_of_appointment: { type: String },
+  // department: { type: String },
+  // designation: { type: String },
+  // work_email_id: { type: String },
+  // uan_number: { type: String },
+  // aadhar_number: { type: String },
+  // pan_number: { type: String },
+  // voter_id: { type: String },
+  // driving_license: { type: String },
+  // passport_number: { type: String },
+  // blood_group: { type: String },
+  // current_address: { type: String },
+  // permanent_address: { type: String },
+  // dob: { type: String },
+  // father_or_husband_name: { type: String },
+  // gender: { type: String },
+  // marital_status: { type: String },
+  // mobile_number: { type: String },
+  // alternative_mobile: { type: String },
+  // email_id: { type: String },
+  // bank_name: { type: String },
+  // ifsc_code: { type: String },
+  // bank_account_number: { type: String },
+  // bank_account_type: { type: String },
+
+  // experiences: [experienceSchema],
 }, { timestamps: true });
 
 // --- Model Export ---

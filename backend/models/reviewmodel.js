@@ -24,4 +24,4 @@ reviewSchema.set("toJSON", {
   },
 });
 
-module.exports = mongoose.model("reviews", reviewSchema);
+module.exports = mongoose.model("reviews",reviewSchema);

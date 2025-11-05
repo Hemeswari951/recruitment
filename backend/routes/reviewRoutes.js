@@ -5,7 +5,7 @@ const Reports = require('../models/reviewmodel');
 // ---------------- Get All Reviews ----------------
 router.get('/', async (req, res) => {
   try {
-    const reviews = await Reports.find().sort({ createdAt: -1 });
+    const reviews = await Reports.find().sort({ createdAt: -1 }); // ✅ latest first
     res.json(reviews.map(r => r.toJSON()));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -46,14 +46,14 @@ router.put('/:id', async (req, res) => {
     const updated = await Reports.findByIdAndUpdate(
       req.params.id,
       { ...req.body },
-      { new: true }
+      { new: true } // ✅ return updated doc
     );
 
     if (!updated) {
       return res.status(404).json({ message: 'Review not found' });
     }
 
-    res.json(updated.toJSON());
+    res.json(updated.toJSON()); // ✅ always send latest
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -12,7 +12,7 @@ const notificationSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: ["sms","performance", "meeting", "event", "holiday", "leave"] // ✅ Added "leave"
+    enum: ["message","performance", "meeting", "event", "holiday", "leave"] // ✅ Added "leave"
   },
   message: { type: String, required: true },
   empId: { type: String, required: false },   // employee-specific or global
