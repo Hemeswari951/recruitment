@@ -132,14 +132,14 @@ class _PayslipScreenState extends State<PayslipScreen> {
           }
         }
         // 👇 If backend didn't send workdays, calculate from attendance
-      int noOfWorkdays = int.tryParse(data['no_of_workdays']?.toString() ?? '0') ?? 0;
-      if (noOfWorkdays == 0) {
+      // int noOfWorkdays = int.tryParse(data['no_of_workdays']?.toString() ?? '0') ?? 0;
+      // if (noOfWorkdays == 0) {
         final monthIndex = _months.indexOf(selectedMonth) + 1;
-        noOfWorkdays = await fetchWorkingDays(employeeId, monthIndex, int.parse(selectedYear));
+        int noOfWorkdays = await fetchWorkingDays(employeeId, monthIndex, int.parse(selectedYear));
 
         // Optionally update backend payslip with correct workdays
-        await _updateWorkdaysInBackend(employeeId, selectedYear, selectedMonth, noOfWorkdays);
-      }
+        // await _updateWorkdaysInBackend(employeeId, selectedYear, selectedMonth, noOfWorkdays);
+      // }
 
         setState(() {
           earnings = data['earnings'] ?? {};
@@ -167,198 +167,211 @@ class _PayslipScreenState extends State<PayslipScreen> {
       print("❌ Network error: $e");
     }
   }
-  Future<void> _updateWorkdaysInBackend(
-    String employeeId, String year, String month, int workdays) async {
-  try {
-    final url = Uri.parse("http://localhost:5000/payslip/update-workdays");
-    final response = await http.post(
-      url,
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode({
-        "employee_id": employeeId,
-        "year": year,
-        "month": month,
-        "no_of_workdays": workdays,
-      }),
-    );
+//   Future<void> _updateWorkdaysInBackend(
+//     String employeeId, String year, String month, int workdays) async {
+//   try {
+//     final url = Uri.parse("http://localhost:5000/payslip/update-workdays");
+//     final response = await http.post(
+//       url,
+//       headers: {"Content-Type": "application/json"},
+//       body: jsonEncode({
+//         "employee_id": employeeId,
+//         "year": year,
+//         "month": month,
+//         "no_of_workdays": workdays,
+//       }),
+//     );
 
-    if (response.statusCode == 200) {
-      print("✅ Workdays updated in backend");
-    } else {
-      print("❌ Failed to update backend: ${response.body}");
-    }
-  } catch (e) {
-    print("❌ Error updating backend: $e");
-  }
-}
+//     if (response.statusCode == 200) {
+//       print("✅ Workdays updated in backend");
+//     } else {
+//       print("❌ Failed to update backend: ${response.body}");
+//     }
+//   } catch (e) {
+//     print("❌ Error updating backend: $e");
+//   }
+// }
 
 
   Future<void> _generatePdf() async {
-    // final employeeId = Provider.of<UserProvider>(context, listen: false).employeeId ?? '';
-    // final now = DateTime.now();
-    final pdf = pw.Document();
+  final pdf = pw.Document();
 
-    final imageLogo = pw.MemoryImage(
-      (await rootBundle.load('assets/logo_zeai.png')).buffer.asUint8List(),
-    );
+  final imageLogo = pw.MemoryImage(
+    (await rootBundle.load('assets/logo_zeai.png')).buffer.asUint8List(),
+  );
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(20),
-        build: (pw.Context context) {
-          return pw.Column(
+  pdf.addPage(
+    pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(20),
+      build: (pw.Context context) {
+        return pw.Container(
+          height: PdfPageFormat.a4.availableHeight,
+          child: pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              // Company Header
-              pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              // ================= Top & Middle Content =================
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Image(imageLogo, height: 50),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  // Company Header
+                  pw.Row(
+                    crossAxisAlignment: pw.CrossAxisAlignment.center,
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Text(
-                        "ZeAI Soft",
-                        style: pw.TextStyle(
-                            fontSize: 14, fontWeight: pw.FontWeight.bold),
+                      pw.Image(imageLogo, height: 50),
+                      pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.end,
+                        children: [
+                          pw.Text("ZeAI Soft",
+                              style: pw.TextStyle(
+                                  fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                          pw.Text(
+                              "3rd Floor,SKCL Tech Square,Lazer St,South Phase",
+                              style: pw.TextStyle(fontSize: 12)),
+                          pw.Text(
+                              "SIDCO Industrial Estate,Guindy,Chennai,Tamil Nadu 600032",
+                              style: pw.TextStyle(fontSize: 12)),
+                          pw.Text("info@zeaisoft.com | +91 97876 36374",
+                              style: pw.TextStyle(fontSize: 12)),
+                        ],
+                      )
+                    ],
+                  ),
+                  pw.Divider(thickness: 1),
+                  pw.SizedBox(height: 5),
+
+                  // Payslip Title
+                  pw.Center(
+                    child: pw.Text(
+                      'Payslip for $selectedMonth $selectedYear',
+                      style: pw.TextStyle(
+                          fontSize: 20, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+
+                  // Employee Details
+                  pw.Text('Employee Details',
+                      style: pw.TextStyle(
+                          fontWeight: pw.FontWeight.bold, fontSize: 16)),
+                  pw.SizedBox(height: 10),
+                  pw.Table(
+                    border:
+                        pw.TableBorder.all(width: 1, color: PdfColors.grey),
+                    children: [
+                      _detailRow('Employee Name', employeeData['employee_name'],
+                          'Employee ID', employeeData['employee_id']),
+                      _detailRow('Date of Joining',
+                          employeeData['date_of_joining'], 'Bank Name',
+                          employeeData['bank_name']),
+                      _detailRow('Designation', employeeData['designation'],
+                          'Account No', employeeData['account_no']),
+                      _detailRow('Location', employeeData['location'], 'UAN',
+                          employeeData['uan']),
+                      _detailRow('No.Of Days Worked',
+                          employeeData['no_of_workdays'], 'ESIC No',
+                          employeeData['esic_no']),
+                      _detailRow('PAN', employeeData['pan'], 'LOP',
+                          employeeData['lop']),
+                    ],
+                  ),
+
+                  // ✅ Extra space between employee details and earnings
+                  pw.SizedBox(height: 30),
+
+                  // Earnings + Deductions
+                  pw.Table(
+                    border:
+                        pw.TableBorder.all(width: 1, color: PdfColors.grey),
+                    children: [
+                      pw.TableRow(
+                        decoration: pw.BoxDecoration(
+                            color: PdfColor.fromHex('#9F71F8')),
+                       children: [
+  _cell('Earnings', isBold: true),
+  _cell('Amount (Rs)', isBold: true),
+  _cell('Deductions', isBold: true),
+  _cell('Amount (Rs)', isBold: true),
+],
                       ),
-                      pw.Text(
-                        "3rd Floor,SKCL Tech Square,Lazer St,South Phase",
-                        style: pw.TextStyle(fontSize: 10),
-                      ),
-                      pw.Text(
-                        "SIDCO Industrial Estate,Guindy,Chennai,Tamil Nadu 600032",
-                        style: pw.TextStyle(fontSize: 10),
-                      ),
-                      pw.Text(
-                        "info@zeaisoft.com | +91 97876 36374",
-                        style: pw.TextStyle(fontSize: 10),
+                      ...List.generate(
+                        (earnings.length > deductions.length
+                            ? earnings.length
+                            : deductions.length),
+                        (index) {
+                          final earningKey = index < earnings.keys.length
+                              ? earnings.keys.elementAt(index)
+                              : '';
+                          final earningValue = index < earnings.values.length
+                              ? earnings.values.elementAt(index).toString()
+                              : '';
+                          final deductionKey = index < deductions.keys.length
+                              ? deductions.keys.elementAt(index)
+                              : '';
+                          final deductionValue = index < deductions.values.length
+                              ? deductions.values.elementAt(index).toString()
+                              : '';
+
+                          return pw.TableRow(
+                            children: [
+                              _cell(earningKey),
+                              _cell(earningValue),
+                              _cell(deductionKey),
+                              _cell(deductionValue),
+                            ],
+                          );
+                        },
                       ),
                     ],
-                  )
+                  ),
+
+                  pw.SizedBox(height: 30),
+
+                  // Net Pay
+                  pw.Container(
+                    alignment: pw.Alignment.centerRight,
+                    child: pw.Text(
+                      "Net Salary: Rs ${deductions['NetSalary'] ?? '-'}",
+                      style: pw.TextStyle(
+                        fontSize: 18,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ],
               ),
-              pw.Divider(thickness: 1),
-              pw.SizedBox(height: 5),
 
-              // Payslip Title
-              pw.Center(
-                child: pw.Text(
-                  'Payslip for $selectedMonth $selectedYear',
-                  style: pw.TextStyle(
-                      fontSize: 14, fontWeight: pw.FontWeight.bold),
-                ),
-              ),
-              pw.SizedBox(height: 10),
-
-              // Employee Details
-              pw.Text('Employee Details',
-                  style: pw.TextStyle(
-                      fontWeight: pw.FontWeight.bold, fontSize: 12)),
-              pw.SizedBox(height: 5),
-              pw.Table(
-                border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey),
+              // ================= Footer (Bottom Note) =================
+              pw.Column(
                 children: [
-                  _detailRow('Employee Name', employeeData['employee_name'],
-                      'Employee ID', employeeData['employee_id']),
-                  _detailRow('Date of Joining', employeeData['date_of_joining'],
-                      'Bank Name', employeeData['bank_name']),
-                  _detailRow('Designation', employeeData['designation'],
-                      'Account No', employeeData['account_no']),
-                  _detailRow('Location', employeeData['location'],
-                      'UAN', employeeData['uan']),
-                  _detailRow('No.Of Days Worked', employeeData['no_of_workdays'], 'ESIC No',
-                      employeeData['esic_no']),
-                  _detailRow('PAN', employeeData['pan'], 'LOP',
-                      employeeData['lop']),
-                 
+                  pw.Divider(thickness: 1, color: PdfColors.grey),
+                  pw.SizedBox(height: 6),
+                  pw.Center(
+                    child: pw.Text(
+                      "This document has been automatically generated by system; therefore, a signature is not required",
+                      style: pw.TextStyle(fontSize: 12, color: PdfColors.grey700),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ),
                 ],
               ),
-              pw.SizedBox(height: 12),
-
-              // Earnings + Deductions in single table
-pw.Table(
-  border: pw.TableBorder.all(width: 0.5, color: PdfColors.grey),
-  children: [
-    pw.TableRow(
-      decoration: pw.BoxDecoration(color: PdfColor.fromHex('#9F71F8')),
-      children: [
-        _cell('Earning'),
-        _cell('Amount (Rs)'),
-        _cell('Deduction'),
-        _cell('Amount (Rs)'),
-      ],
-    ),
-    ...List.generate(
-      // Max rows = larger of earnings/deductions length
-      (earnings.length > deductions.length
-          ? earnings.length
-          : deductions.length),
-      (index) {
-        final earningKey = index < earnings.keys.length
-            ? earnings.keys.elementAt(index)
-            : '';
-        final earningValue = index < earnings.values.length
-            ? earnings.values.elementAt(index).toString()
-            : '';
-        final deductionKey = index < deductions.keys.length
-            ? deductions.keys.elementAt(index)
-            : '';
-        final deductionValue = index < deductions.values.length
-            ? deductions.values.elementAt(index).toString()
-            : '';
-
-        return pw.TableRow(
-          children: [
-            _cell(earningKey),
-            _cell(earningValue),
-            _cell(deductionKey),
-            _cell(deductionValue),
-          ],
+            ],
+          ),
         );
       },
     ),
-  ],
-),
+  );
 
-              pw.SizedBox(height: 12),
+  await Printing.layoutPdf(
+    onLayout: (PdfPageFormat format) async => pdf.save(),
+  );
+}
 
-              // Net Pay
-              pw.Container(
-                alignment: pw.Alignment.centerRight,
-                child: pw.Text(
-                  "Net Salary: Rs ${deductions['NetSalary'] ?? '-'}",
-                  style: pw.TextStyle(
-                    
-                    fontSize: 14,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-              pw.SizedBox(height: 30),
 
-              // Footer (Signature & Seal)
-              // pw.Row(
-              //   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-              //   children: [
-              //     pw.Text("Employee Signature",
-              //         style: pw.TextStyle(fontSize: 10)),
-              //     pw.Text("Authorized Signatory",
-              //         style: pw.TextStyle(fontSize: 10)),
-              //   ],
-              // )
-            ],
-          );
-        },
-      ),
-    );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-    );
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -739,9 +752,18 @@ pw.TableRow _detailRow(String k1, String? v1, String k2, String? v2) {
   );
 }
 
-pw.Widget _cell(String text) {
+pw.Widget _cell(String text, {bool isBold = false}) {
   return pw.Padding(
-    padding: const pw.EdgeInsets.all(4),
-    child: pw.Text(text, style: pw.TextStyle(fontSize: 10)),
+    padding: const pw.EdgeInsets.symmetric(
+      vertical: 7,
+      horizontal: 4,
+    ),
+    child: pw.Text(
+      text,
+      style: pw.TextStyle(
+        fontSize: 14,
+        fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
+      ),
+    ),
   );
 }

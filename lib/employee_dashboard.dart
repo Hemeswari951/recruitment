@@ -13,6 +13,7 @@ import 'company_events.dart';
 import 'employeenotification.dart';
 import 'attendance_login.dart';
 import 'event_banner_slider.dart';
+import 'mail.dart';
 
 class EmployeeDashboard extends StatefulWidget {
   const EmployeeDashboard({super.key});
@@ -167,6 +168,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           }),
           _quickActionButton('Mark Attendance', () {
             Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceLoginPage()));
+          }),
+            _quickActionButton('Mail', () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const MailDashboard()),
+            );
           }),
           _quickActionButton('Notifications Preview', () {
             final empId =

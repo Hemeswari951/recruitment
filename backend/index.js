@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
 
+
 // ---------------- MODELS ---------------- //
 const Employee = require('./models/employee');
 const LeaveBalance = require('./models/leaveBalance');
@@ -24,11 +25,27 @@ const notificationRoutes = require('./routes/notifications');
 const requestsRoutes = require('./routes/changeRequests');
 const uploadRoutes = require('./routes/upload');
 const payslipRoutes = require('./routes/payslip');
+const companyEventRoutes = require('./routes/companyEvent');
+const oncampusRoutes = require('./routes/oncampus');
+//const inviteTracker = require('./routes/inviteTracker');
+const inviteTrackerRoutes = require('./routes/inviteTracker');
+const offcampusRoutes = require("./routes/offcampus");
+const offerLetterRoutes = require("./routes/offerletter");
+const exitDetailsRoutes = require('./routes/exitDetailsRoutes');
+const expericenceRoutes = require('./routes/expericence');
+const exitRoutes = require("./routes/exitDetails");
+const exitUploadRoutes = require("./routes/exitUpload"); 
+const revisedOfferLetterRoute = require("./routes/RevisedOfferLetter");
+const mailRoutes= require("./routes/mail");
+
+
+
 
 // ---------------- EXPRESS APP SETUP ---------------- //
 const app = express();
 const PORT =5000;
 const MONGO_URI = 'mongodb://localhost:27017/Demo_Db';
+//const MONGO_URI = 'mongodb://localhost:27017/Copy_Dashboard_Db';
 
 // ---------------- MIDDLEWARE ---------------- //
 app.use((req, res, next) => {
@@ -37,8 +54,14 @@ app.use((req, res, next) => {
 });
 
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+//app.use(express.json());
+//app.use(express.urlencoded({ extended: true }));
+// increase body size to allow larger JSON (if needed)
+// app.use(express.json({ limit: "10mb" }));
+// app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // ---------------- ROUTES ---------------- //
@@ -55,6 +78,18 @@ app.use('/notifications', notificationRoutes);
 app.use('/requests', requestsRoutes);
 app.use('/upload', uploadRoutes);
 app.use('/payslip', payslipRoutes);
+app.use('/company-events', companyEventRoutes);
+app.use('/api/oncampus', oncampusRoutes);
+app.use('/inviteTracker',inviteTrackerRoutes);
+app.use('/api/offcampus', offcampusRoutes);
+app.use("/api/offerletter", offerLetterRoutes);
+app.use('/api', exitDetailsRoutes);
+app.use('/api/expericence', expericenceRoutes);
+app.use("/api/exitDetails", exitRoutes);
+app.use("/api/exitDetails", exitUploadRoutes);
+app.use("/api/revisedofferletter", revisedOfferLetterRoute);
+app.use("/api/mail", mailRoutes);
+
 
 // ---------------- PAYSLIP APIs ---------------- //
 app.get('/get-payslip-details', async (req, res) => {

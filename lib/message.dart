@@ -92,7 +92,7 @@ class _MsgPageState extends State<MsgPage> {
           headers: {"Content-Type": "application/json"},
           body: json.encode({
             "month": month,
-            "category": "sms", // 🔴 temporary fixed category
+            "category": "message", // 🔴 temporary fixed category
             "message": _msgController.text,
             "empId": widget.employeeId, // 🔴 target employee ID
             "senderName":senderName,   // 🔹 sender Name  // 👈 extra field

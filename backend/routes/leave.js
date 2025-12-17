@@ -138,6 +138,11 @@ router.get("/approvers/:employeeId", async (req, res) => {
       const approvers = await Employee.find({ position: "HR" }, 'employeeId employeeName');
       return res.json(approvers);
     } 
+    // If the user is HR, their approver is the Founder.
+    else if (position === "hr") {
+      const approvers = await Employee.find({ position: "Founder" }, 'employeeId employeeName');
+      return res.json(approvers);
+    }
     // For other roles, return an empty list.
     else {
       return res.json([]); 
@@ -271,11 +276,15 @@ router.get("/leave-approvals/:employeeId", async (req, res) => {
     };
 
     // HR and Founder see requests from employees/interns (assigned to a TL) AND requests from TLs.
-    if (approverRole === 'hr' || approverRole === 'founder') {
+    if (approverRole === 'founder') {
       findCondition.$or = [
-        { applicantRole: { $in: ["employee", "intern", "tech trainee"] } }, // Any request from an employee or intern
-        { applicantRole: "tl" } // Any request from a TL (which goes to HR)
+        { applicantRole: { $in: ["employee", "intern", "tech trainee"] } },
+        { applicantRole: "tl" },
+        { applicantRole: "hr" } // Founder can see HR's leave requests
       ];
+    } else if (approverRole === 'hr') {
+      // HR sees requests from TLs and below, but NOT from other HRs.
+      findCondition.$or = [{ applicantRole: { $in: ["employee", "intern", "tech trainee"] } }, { applicantRole: "tl" }];
     } 
     // A TL sees only the requests specifically assigned to them.
     else if (approverRole === 'tl') {
@@ -381,15 +390,22 @@ router.get("/pending-count", async (req, res) => {
             status: "Pending",
         };
 
-        if (approverRole === 'superadmin' || approverRole === 'founder' || approverRole === 'hr') {
-            // Superadmin, Founder, and HR see requests from TLs and other roles they manage.
-            // This logic assumes they see all pending requests not made by themselves.
-            if (approverId) {
-                matchCondition.employeeId = { $ne: approverId };
-            }
+        if (approverRole === 'founder' || approverRole === 'superadmin') {
+            // Founder/Superadmin sees requests from TLs, HR, and below.
+            matchCondition.$or = [
+                { applicantRole: { $in: ["employee", "intern", "tech trainee"] } },
+                { applicantRole: "tl" },
+                { applicantRole: "hr" }
+            ];
+        } else if (approverRole === 'hr') {
+            // HR sees requests from TLs and below, but NOT from other HRs.
+            matchCondition.$or = [
+                { applicantRole: { $in: ["employee", "intern", "tech trainee"] } },
+                { applicantRole: "tl" }
+            ];
         } else if (approverRole === 'tl') {
             // A TL sees only the requests specifically assigned to them.
-            if (!approverId) return res.status(400).json({ message: "❌ approverId is required for TL" });
+            if (!approverId) return res.status(400).json({ message: "❌ approverId is required for TL role" });
             matchCondition.approver = approverId;
         } else {
             // Other roles see no pending requests by default.

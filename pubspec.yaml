@@ -25,11 +25,17 @@ dependencies:
   cupertino_icons: ^1.0.8
   badges: ^3.1.2
   url_launcher: ^6.2.6
+  audioplayers: ^6.1.0
+  open_filex: ^4.7.0
+  path_provider: ^2.0.15
+  
+
     
   
 dev_dependencies:
   flutter_test:
     sdk: flutter
+    
   flutter_lints: ^5.0.0
 
 flutter:
@@ -38,4 +44,14 @@ flutter:
   assets:
     - assets/
     - assets/event-png/
-    - assets/emp-directory/
+    - assets/emp-directory/ 
+    - assets/sounds/alert.mp3
+    - assets/fonts/
+  
+  fonts:
+    - family: Calibri
+      fonts:
+        - asset: assets/fonts/Calibri-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Calibri-Bold.ttf
+          weight: 700

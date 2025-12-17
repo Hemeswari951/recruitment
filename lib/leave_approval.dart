@@ -31,30 +31,27 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
 
   // ✅ Helper for displaying dates from API
   String _formatDate(String? rawDate) {
-  if (rawDate == null || rawDate.isEmpty) return '';
-  try {
-    final DateTime parsedDate = DateTime.parse(rawDate).toLocal(); // keep IST
-    return DateFormat('dd-MM-yyyy').format(parsedDate);
-  } catch (e) {
-    return rawDate;
+    if (rawDate == null || rawDate.isEmpty) return '';
+    try {
+      final DateTime parsedDate = DateTime.parse(rawDate).toLocal(); // keep IST
+      return DateFormat('dd-MM-yyyy').format(parsedDate);
+    } catch (e) {
+      return rawDate;
+    }
   }
-}
-
 
   // ✅ Fetch leaves (employee → own, admin/founder → all)
   Future<void> fetchAllLeaves() async {
     try {
       final userProvider = Provider.of<UserProvider>(context, listen: false);
-      final role = userProvider.position?.toLowerCase() ?? "";
       final employeeId = userProvider.employeeId ?? "";
 
-      String url;
-      if (role == "admin" || role == "founder") {
-        url = "$apiUrl/all/by-role/$role";
-      } else {
-        url = "$apiUrl/all?employeeId=$employeeId";
+      if (employeeId.isEmpty) {
+        print("❌ Employee ID is missing, cannot fetch leaves.");
+        return;
       }
 
+      String url = "$apiUrl/leave-approvals/$employeeId";
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
@@ -68,75 +65,77 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
       print("❌ Error fetching leave requests: $e");
     }
   }
+
   // ✅ Apply Filter
-Future<void> applyFilter() async {
-  try {
-    String url = "$apiUrl/filter";
+  Future<void> applyFilter() async {
+    try {
+      String url = "$apiUrl/filter";
 
-    String? startDate;
-    String? endDate;
-    final fmt = DateFormat('yyyy-MM-dd');
+      String? startDate;
+      String? endDate;
+      final fmt = DateFormat('yyyy-MM-dd');
 
-    if (selectedFilter == "Last 7 Days") {
-      final now = DateTime.now();
-      final start = now.subtract(const Duration(days: 6));
-      startDate = fmt.format(start);
-      endDate = fmt.format(now);
-    } else if (selectedFilter == "Last 30 Days") {
-      final now = DateTime.now();
-      final start = now.subtract(const Duration(days: 29));
-      startDate = fmt.format(start);
-      endDate = fmt.format(now);
-    } else if (selectedFilter == "Custom Range" && customRange != null) {
-      startDate = fmt.format(customRange!.start);
-      endDate = fmt.format(customRange!.end);
-    }
-
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final role = userProvider.position?.toLowerCase() ?? "";
-    final employeeId = userProvider.employeeId ?? "";
-
-    // ✅ Map filter → status
-    String status;
-    if (selectedFilter == "All") {
-      status = "All"; // backend will return only Approved & Rejected
-    } else if (selectedFilter == "Last 7 Days" ||
-        selectedFilter == "Last 30 Days" ||
-        selectedFilter == "Custom Range") {
-      status = "All"; // still want Approved & Rejected only
-    } else {
-      status = selectedFilter; // "Approved", "Rejected", etc.
-    }
-
-    // employee → filter by id
-    if (role != "admin" && role != "founder") {
-      if (startDate != null && endDate != null) {
-        url += "?employeeId=$employeeId&fromDate=$startDate&toDate=$endDate&status=$status";
-      } else {
-        url += "?employeeId=$employeeId&status=$status";
+      if (selectedFilter == "Last 7 Days") {
+        final now = DateTime.now();
+        final start = now.subtract(const Duration(days: 6));
+        startDate = fmt.format(start);
+        endDate = fmt.format(now);
+      } else if (selectedFilter == "Last 30 Days") {
+        final now = DateTime.now();
+        final start = now.subtract(const Duration(days: 29));
+        startDate = fmt.format(start);
+        endDate = fmt.format(now);
+      } else if (selectedFilter == "Custom Range" && customRange != null) {
+        startDate = fmt.format(customRange!.start);
+        endDate = fmt.format(customRange!.end);
       }
-    } else {
-      // admin/founder → role based
-      if (startDate != null && endDate != null) {
-        url += "?role=$role&employeeId=$employeeId&fromDate=$startDate&toDate=$endDate&status=$status";
+
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final role = userProvider.position?.toLowerCase() ?? "";
+      final employeeId = userProvider.employeeId ?? "";
+
+      // ✅ Map filter → status
+      String status;
+      if (selectedFilter == "All") {
+        status = "All"; // backend will return only Approved & Rejected
+      } else if (selectedFilter == "Last 7 Days" ||
+          selectedFilter == "Last 30 Days" ||
+          selectedFilter == "Custom Range") {
+        status = "All"; // still want Approved & Rejected only
       } else {
-        url += "?role=$role&employeeId=$employeeId&status=$status";
+        status = selectedFilter; // "Approved", "Rejected", etc.
       }
-    }
 
-    final response = await http.get(Uri.parse(url));
+      // employee → filter by id
+      if (role != "admin" && role != "founder") {
+        if (startDate != null && endDate != null) {
+          url +=
+              "?employeeId=$employeeId&fromDate=$startDate&toDate=$endDate&status=$status";
+        } else {
+          url += "?employeeId=$employeeId&status=$status";
+        }
+      } else {
+        // admin/founder → role based
+        if (startDate != null && endDate != null) {
+          url +=
+              "?role=$role&employeeId=$employeeId&fromDate=$startDate&toDate=$endDate&status=$status";
+        } else {
+          url += "?role=$role&employeeId=$employeeId&status=$status";
+        }
+      }
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      setState(() {
-        filteredLeaves = data["items"];
-      });
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          filteredLeaves = data["items"];
+        });
+      }
+    } catch (e) {
+      print("❌ Error applying filter: $e");
     }
-  } catch (e) {
-    print("❌ Error applying filter: $e");
   }
-}
-
 
   // ✅ Pick Custom Range
   Future<void> _pickDateRange(BuildContext context) async {
@@ -230,7 +229,10 @@ Future<void> applyFilter() async {
                       setState(() {
                         fromDate = tempFrom;
                         toDate = tempTo;
-                        customRange = DateTimeRange(start: fromDate, end: toDate);
+                        customRange = DateTimeRange(
+                          start: fromDate,
+                          end: toDate,
+                        );
                         selectedFilter = "Custom Range";
                       });
                       applyFilter();
@@ -271,9 +273,18 @@ Future<void> applyFilter() async {
                       position: const RelativeRect.fromLTRB(1000, 80, 20, 0),
                       items: [
                         const PopupMenuItem(value: "All", child: Text("All")),
-                        const PopupMenuItem(value: "Last 7 Days", child: Text("Last 7 Days")),
-                        const PopupMenuItem(value: "Last 30 Days", child: Text("Last 30 Days")),
-                        const PopupMenuItem(value: "Custom Range", child: Text("Custom Range")),
+                        const PopupMenuItem(
+                          value: "Last 7 Days",
+                          child: Text("Last 7 Days"),
+                        ),
+                        const PopupMenuItem(
+                          value: "Last 30 Days",
+                          child: Text("Last 30 Days"),
+                        ),
+                        const PopupMenuItem(
+                          value: "Custom Range",
+                          child: Text("Custom Range"),
+                        ),
                       ],
                     );
 
@@ -328,8 +339,13 @@ Future<void> applyFilter() async {
                       return Card(
                         margin: const EdgeInsets.all(8),
                         child: ListTile(
-                          leading: const Icon(Icons.person, color: Colors.purple),
-                          title: Text("${leave['employeeName']} - ${leave['leaveType']}"),
+                          leading: const Icon(
+                            Icons.person,
+                            color: Colors.purple,
+                          ),
+                          title: Text(
+                            "${leave['employeeName']} - ${leave['leaveType']}",
+                          ),
                           subtitle: Text(
                             "From: ${_formatDate(leave['fromDate'])} To: ${_formatDate(leave['toDate'])}\nReason: ${leave['reason']}",
                           ),
@@ -337,26 +353,40 @@ Future<void> applyFilter() async {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: const Icon(Icons.check_circle, color: Colors.green),
-                                onPressed: () => updateLeaveStatus(leave['_id'], "Approved"),
+                                icon: const Icon(
+                                  Icons.check_circle,
+                                  color: Colors.green,
+                                ),
+                                onPressed: () =>
+                                    updateLeaveStatus(leave['_id'], "Approved"),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.cancel, color: Colors.red),
-                                onPressed: () => updateLeaveStatus(leave['_id'], "Rejected"),
+                                icon: const Icon(
+                                  Icons.cancel,
+                                  color: Colors.red,
+                                ),
+                                onPressed: () =>
+                                    updateLeaveStatus(leave['_id'], "Rejected"),
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color: leave['status'] == "Approved"
                                       ? Colors.green
                                       : leave['status'] == "Rejected"
-                                          ? Colors.red
-                                          : Colors.orange,
+                                      ? Colors.red
+                                      : Colors.orange,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
                                   leave['status'] ?? "Pending",
-                                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                  ),
                                 ),
                               ),
                             ],

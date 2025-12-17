@@ -8,7 +8,9 @@ import 'package:provider/provider.dart';
 import 'sidebar.dart';
 
 class SuperadminPerformancePage extends StatefulWidget {
-  const SuperadminPerformancePage({super.key});
+  final String currentUserId; // ✅ logged-in admin’s empId
+
+  const SuperadminPerformancePage({super.key, required this.currentUserId});
 
   @override
   State<SuperadminPerformancePage> createState() =>
@@ -19,12 +21,8 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
   String selectedEmpId = "EMP ID";
   String selectedEmpName = "EMP NAME";
 
-  final Map<String, String> empMap = {
-    "ZeAI102": "Nivetha S",
-    "ZeAI002": "Hemeswari ",
-    "ZeAI115": "Srivatsini R",
-  };
-  late final Map<String, String> nameToIdMap;
+  Map<String, String> empMap = {}; // Will be fetched from API
+  late Map<String, String> nameToIdMap = {};
 
   final Map<String, Color> flagColors = {
     "Green Flag": Colors.green,
@@ -39,12 +37,40 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
   TextEditingController technicalKnowledgeController = TextEditingController();
   TextEditingController businessKnowledgeController = TextEditingController();
 
-  bool _isloading = false;
+  final bool _isloading = false;
 
   @override
   void initState() {
     super.initState();
-    nameToIdMap = {for (var e in empMap.entries) e.value: e.key};
+    _fetchAllEmployees();
+  }
+
+  // ✅ Fetch all employees for the dropdown
+  Future<void> _fetchAllEmployees() async {
+    try {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final reviewerPosition =
+          userProvider.position ?? 'superadmin'; // Default to superadmin
+
+      final response = await http.get(
+        Uri.parse(
+          'http://localhost:5000/api/employees/for-review/$reviewerPosition',
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> employees = jsonDecode(response.body);
+        setState(() {
+          empMap = {
+            for (var e in employees) e['employeeId']: e['employeeName'],
+          };
+          nameToIdMap = {for (var e in empMap.entries) e.value: e.key};
+        });
+      }
+    } catch (e) {
+      print('Error fetching all employees: $e');
+      // Handle error, maybe show a snackbar
+    }
   }
 
   String getCurrentMonth() {
@@ -81,12 +107,9 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
     }
 
     final url = Uri.parse('http://localhost:5000/reviews');
-    setState(() => _isloading = true);
-
     final reviewerName =
         Provider.of<UserProvider>(context, listen: false).employeeName ??
         'Admin';
-
     final body = {
       "empId": selectedEmpId,
       "empName": selectedEmpName,
@@ -114,45 +137,44 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
           ),
         );
 
-        // 🔔 Add notifications (one for employee, one for admin)
-        String currentMonth = getCurrentMonth();
+        // 🔔 Create notifications
         final notifUrl = Uri.parse("http://localhost:5000/notifications");
+        String currentMonth = getCurrentMonth();
         final userProvider = Provider.of<UserProvider>(context, listen: false);
-        final adminId = userProvider.employeeId ?? 'superadmin';
         final adminName = userProvider.employeeName ?? 'Super Admin';
 
-        // 1. Notification for the Employee
-        final employeeNotifBody = {
+        // 1️⃣ Employee notification
+        final employeeNotif = {
           "month": currentMonth,
           "category": "performance",
-          "message": "Performance received from ($adminName)",
+          // "message": "Performance review for $selectedEmpName ($selectedEmpId) - $currentMonth",
+          "message": "Performance received from ($adminName) - $currentMonth",
           "empId": selectedEmpId,
-          "senderId": adminId,
           "senderName": adminName,
+          "senderId": widget.currentUserId,
           "flag": selectedFlag,
         };
+        await http.post(
+          notifUrl,
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(employeeNotif),
+        );
 
-        // 2. Notification for the Admin
-        final adminNotifBody = {
+        // 2️⃣ Admin self-copy
+        final adminNotif = {
           "month": currentMonth,
           "category": "performance",
-          "message": "Performance sent to ($selectedEmpName)",
-          "empId": adminId, // Sent to the admin themselves
-          "senderId": adminId,
+          // "message": "You reviewed $selectedEmpName ($selectedEmpId) - $currentMonth",
+          "message": "Performance sent to ($selectedEmpName) - $currentMonth",
+          "empId": widget.currentUserId, // ✅ logged-in admin’s own ID
           "senderName": adminName,
+          "senderId": widget.currentUserId,
           "flag": selectedFlag,
         };
-
-        // Send both notifications
         await http.post(
           notifUrl,
           headers: {"Content-Type": "application/json"},
-          body: jsonEncode(employeeNotifBody),
-        );
-        await http.post(
-          notifUrl,
-          headers: {"Content-Type": "application/json"},
-          body: jsonEncode(adminNotifBody),
+          body: jsonEncode(adminNotif),
         );
 
         // ✅ Reset form
@@ -171,7 +193,8 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => const AdminNotificationsPage(empId: "ALL"),
+              builder: (context) =>
+                  AdminNotificationsPage(empId: widget.currentUserId),
             ),
           );
         });
@@ -179,7 +202,6 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
         // ❌ Duplicate review → stay on same page
         final data = jsonDecode(response.body);
         ScaffoldMessenger.of(context).showSnackBar(
-          // ignore: prefer_interpolation_to_compose_strings
           SnackBar(
             content: Text("⚠ ${data['message']}"),
             backgroundColor: Colors.orange,
@@ -201,9 +223,6 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
           backgroundColor: Colors.redAccent,
         ),
       );
-    } finally {
-      // Ensure loading state is reset even if an error occurs
-      setState(() => _isloading = false);
     }
   }
 

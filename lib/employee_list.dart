@@ -326,7 +326,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
   @override
   Widget build(BuildContext context) {
     final searchController = TextEditingController();
-    final screenWidth = MediaQuery.of(context).size.width;
+    // final screenWidth = MediaQuery.of(context).size.width;
 
     return Sidebar(
       title: "Employee List",
@@ -694,13 +694,13 @@ class _EmployeeDataTableState extends State<_EmployeeDataTable> {
                               }
                             } catch (err) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("⚠ Error: $err")),
+                                SnackBar(content: Text("⚠️ Error: $err")),
                               );
                             }
                           },
                         ),
 
-                        /// ✏ Edit
+                        /// ✏️ Edit
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           onPressed: () => widget.onEdit(emp),
