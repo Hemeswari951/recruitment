@@ -1,6 +1,6 @@
+// main.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
 import 'employee_dashboard.dart';
 import 'admin_dashboard.dart';
 import 'superadmin_dashboard.dart';
@@ -17,7 +17,27 @@ import 'leave_list.dart';
 import 'user_provider.dart';
 import 'file_picker.dart';
 
-void main() {
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'notifications_helper.dart'; // file you'll create
+
+// >>> HIGHLIGHT: single NavigatorKey for routing from notifications
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+// >>> HIGHLIGHT: single async main() — initializes bindings, timezones and notifications
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // initialize timezone database (required by flutter_local_notifications zonedSchedule)
+  tz.initializeTimeZones();
+
+  // initialize notifications plugin -- ensure NotificationHelper.init exists and is async
+  // Optional: pass navigatorKey if your NotificationHelper uses it to navigate on tap
+  await NotificationHelper.init(navigatorKey: navigatorKey);
+  //await NotificationHelper.init();
+  // >>> HIGHLIGHT: if your NotificationHelper.init signature does not accept navigatorKey,
+  // call await NotificationHelper.init(); instead.
+
+  // Run app with provider(s)
   runApp(
     MultiProvider(
       providers: [
@@ -28,12 +48,14 @@ void main() {
   );
 }
 
+// >>> HIGHLIGHT: Single MyApp class (const constructor allowed)
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey, // use this key for navigation from notification taps
       title: 'Employee HRM',
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
@@ -44,7 +66,7 @@ class MyApp extends StatelessWidget {
         '/super_admin': (context) => const SuperAdminDashboard(),
         '/applyLeave': (context) => const ApplyLeave(),
         '/emp_payroll': (context) => const EmpPayroll(),
-        '/attendance-login': (context) => const AttendanceLoginPage(), 
+        '/attendance-login': (context) => const AttendanceLoginPage(),
         '/employeenotification': (context) {
           final userProvider = Provider.of<UserProvider>(context, listen: false);
           final employeeId = userProvider.employeeId ?? '';

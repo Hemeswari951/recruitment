@@ -1,3 +1,4 @@
+//employee_dashboard.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -7,13 +8,14 @@ import 'user_provider.dart';
 import 'sidebar.dart';
 import 'apply_leave.dart';
 import 'todo_planner.dart';
-import 'emp_payroll.dart';
+// import 'emp_payroll.dart';
+import 'payslip.dart';
 import 'company_events.dart';
 //import 'notification.dart';
 import 'employeenotification.dart';
 import 'attendance_login.dart';
 import 'event_banner_slider.dart';
-import 'mail.dart';
+import 'mail_dashboard.dart';
 
 class EmployeeDashboard extends StatefulWidget {
   const EmployeeDashboard({super.key});
@@ -33,27 +35,54 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   int sickTotal = 0;
   int sadUsed = 0;
   int sadTotal = 0;
+  int _mailCount = 0;
 
   @override
   void initState() {
     super.initState();
     fetchEmployeeName();
+    _fetchMailCount();
+    _fetchNotificationCount();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _fetchLeaveBalance(); // refresh when dashboard is revisited
+    _fetchMailCount();
+    _fetchNotificationCount();
+  }
+
+  int _notificationCount = 0;
+
+  Future<void> _fetchNotificationCount() async {
+    final employeeId = Provider.of<UserProvider>(
+      context,
+      listen: false,
+    ).employeeId;
+    if (employeeId == null) return;
+
+    final res = await http.get(
+      Uri.parse("https://company-04bz.onrender.com/notifications/unread-count/$employeeId"),
+    );
+
+    if (res.statusCode == 200 && mounted) {
+      final data = jsonDecode(res.body);
+      setState(() => _notificationCount = data["count"] ?? 0);
+    }
   }
 
   /// 🔹 Fetch employee name from backend
   Future<void> fetchEmployeeName() async {
-    final employeeId = Provider.of<UserProvider>(context, listen: false).employeeId;
+    final employeeId = Provider.of<UserProvider>(
+      context,
+      listen: false,
+    ).employeeId;
     if (employeeId == null) return;
 
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:5000/get-employee-name/$employeeId'),
+        Uri.parse('https://company-04bz.onrender.com/get-employee-name/$employeeId'),
       );
 
       if (response.statusCode == 200) {
@@ -72,7 +101,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   /// 🔹 Fetch leave balances
   Future<void> _fetchLeaveBalance() async {
     try {
-      final employeeId = Provider.of<UserProvider>(context, listen: false).employeeId?.trim();
+      final employeeId = Provider.of<UserProvider>(
+        context,
+        listen: false,
+      ).employeeId?.trim();
       if (employeeId == null || employeeId.isEmpty) {
         setState(() {
           _error = "Employee ID not found";
@@ -82,7 +114,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       }
 
       final year = DateTime.now().year;
-      final url = "http://localhost:5000/apply/leave-balance/$employeeId?year=$year";
+      final url =
+          "https://company-04bz.onrender.com/apply/leave-balance/$employeeId?year=$year";
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
@@ -114,6 +147,35 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     }
   }
 
+  Future<void> _fetchMailCount() async {
+    final employeeId = Provider.of<UserProvider>(
+      context,
+      listen: false,
+    ).employeeId;
+    if (employeeId == null) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse(
+          'https://company-04bz.onrender.com/api/mail/pending-count?employeeId=$employeeId',
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            _mailCount = data['pendingCount'] ?? 0;
+          });
+        }
+      } else {
+        print('❌ Failed to fetch mail count: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error fetching mail count: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = Provider.of<UserProvider>(context);
@@ -128,7 +190,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               padding: const EdgeInsets.all(20),
               child: Text(
                 'Welcome, ${employeeName ?? user.employeeName ?? '...'}!',
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               ),
             ),
             if (user.position != null)
@@ -160,39 +226,103 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         alignment: WrapAlignment.center,
         children: [
           _quickActionButton('Apply Leave', () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => ApplyLeave()))
-                .then((_) => _fetchLeaveBalance());
-          }),
-          _quickActionButton('Download Payslip', () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const EmpPayroll()));
-          }),
-          _quickActionButton('Mark Attendance', () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceLoginPage()));
-          }),
-            _quickActionButton('Mail', () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const MailDashboard()),
+              MaterialPageRoute(builder: (_) => ApplyLeave()),
+            ).then((_) => _fetchLeaveBalance());
+          }),
+          _quickActionButton('Download Payslip', () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PayslipScreen()),
             );
           }),
-          _quickActionButton('Notifications Preview', () {
-            final empId =
-                Provider.of<UserProvider>(context, listen: false).employeeId;
-            if (empId != null) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => EmployeeNotificationsPage(empId: empId),
-                ),
-              );
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Employee ID not found.')),
-              );
-            }
+          _quickActionButton('Mark Attendance', () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AttendanceLoginPage()),
+            );
           }),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _quickActionButton('Mail', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MailDashboard()),
+                ).then((_) => _fetchMailCount());
+              }),
+              if (_mailCount > 0)
+                Positioned(
+                  right: -10,
+                  top: -10,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '$_mailCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+                    // ✅ Notifications Preview with Badge logic
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _quickActionButton('Notifications Preview', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EmployeeNotificationsPage(
+                      empId:
+                          Provider.of<UserProvider>(
+                            context,
+                            listen: false,
+                          ).employeeId ??
+                          '',
+                    ),
+                  ),
+                ).then((_) {
+                  // This triggers when you come BACK to the dashboard
+                  _fetchNotificationCount();
+                });
+              }),
+              if (_notificationCount > 0)
+                Positioned(
+                  right: -8,
+                  top: -8,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '$_notificationCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
           _quickActionButton('Company Events', () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const CompanyEventsScreen()));
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CompanyEventsScreen()),
+            );
           }),
         ],
       ),
@@ -218,7 +348,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
   Widget _buildCardLayout(BuildContext context) {
     final currentDate = DateTime.now();
-    final formattedDate = '${currentDate.day}/${currentDate.month}/${currentDate.year}';
+    final formattedDate =
+        '${currentDate.day}/${currentDate.month}/${currentDate.year}';
     final currentTime = TimeOfDay.now().format(context);
 
     return Padding(
@@ -235,7 +366,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               subtitle: 'Today: $formattedDate',
               buttonLabel: 'To Do List',
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const ToDoPlanner()));
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ToDoPlanner()),
+                );
               },
             ),
             _leaveCardTile(
@@ -244,12 +378,14 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               subtitle: _isLoading
                   ? 'Loading...'
                   : _error != null
-                      ? 'Error'
-                      : 'Used: $casualUsed/$casualTotal\nRemaining: ${casualTotal - casualUsed}',
+                  ? 'Error'
+                  : 'Used: $casualUsed/$casualTotal\nRemaining: ${casualTotal - casualUsed}',
               buttonLabel: 'View',
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => ApplyLeave()))
-                    .then((_) => _fetchLeaveBalance());
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => ApplyLeave()),
+                ).then((_) => _fetchLeaveBalance());
               },
             ),
             _leaveCardTile(
@@ -258,12 +394,14 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               subtitle: _isLoading
                   ? 'Loading...'
                   : _error != null
-                      ? 'Error'
-                      : 'Used: $sickUsed/$sickTotal\nRemaining: ${sickTotal - sickUsed}',
+                  ? 'Error'
+                  : 'Used: $sickUsed/$sickTotal\nRemaining: ${sickTotal - sickUsed}',
               buttonLabel: 'View',
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => ApplyLeave()))
-                    .then((_) => _fetchLeaveBalance());
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => ApplyLeave()),
+                ).then((_) => _fetchLeaveBalance());
               },
             ),
             _leaveCardTile(
@@ -272,12 +410,14 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               subtitle: _isLoading
                   ? 'Loading...'
                   : _error != null
-                      ? 'Error'
-                      : 'Used: $sadUsed/$sadTotal\nRemaining: ${sadTotal - sadUsed}',
+                  ? 'Error'
+                  : 'Used: $sadUsed/$sadTotal\nRemaining: ${sadTotal - sadUsed}',
               buttonLabel: 'View',
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => ApplyLeave()))
-                    .then((_) => _fetchLeaveBalance());
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => ApplyLeave()),
+                ).then((_) => _fetchLeaveBalance());
               },
             ),
           ],
@@ -326,7 +466,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               const SizedBox(height: 12),
               Text(
                 title,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Colors.black,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -341,7 +485,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.deepPurple,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: Text(buttonLabel),
           ),

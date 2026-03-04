@@ -1,3 +1,4 @@
+// lib/edit_pdf_content_page.dart
 import 'package:flutter/material.dart';
 import 'pdf_content_model.dart';
 
@@ -197,6 +198,16 @@ class _EditPdfContentPageState extends State<EditPdfContentPage> {
                 'Compensation Details',
                 _controllers['compensationBody']!,
               ),
+
+              // Helper hint for compensation placeholders
+              Padding(
+                padding: const EdgeInsets.only(top: 6.0, bottom: 12.0),
+                child: Text(
+                  'Placeholders you can use in Compensation: {stipend}, {ctc}, {salaryFrom}\nExample: "You will receive your salary payment from {salaryFrom}."',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+                ),
+              ),
+
               _buildEditorField(
                 'Confidentiality',
                 _controllers['confidentialityBody']!,

@@ -1,3 +1,4 @@
+// payslip.dart
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -19,8 +20,11 @@ class PayslipScreen extends StatefulWidget {
 }
 
 class _PayslipScreenState extends State<PayslipScreen> {
-  int workingDays = 0;
+  // int workingDays = 0;
+  double fullMonthWorkingDays = 0;
+
   bool isLoading = true;
+  bool noPayslipAvailable = false;
   final List<String> _months = [
     'January',
     'February',
@@ -35,7 +39,70 @@ class _PayslipScreenState extends State<PayslipScreen> {
     'November',
     'December',
   ];
-  final List<String> _years = ['2024', '2025'];
+
+  DateTime? employeeDOJ;
+
+  DateTime safeParseDate(String raw) {
+  try {
+    return DateTime.parse(raw); // ISO format yyyy-MM-dd
+  } catch (_) {
+    try {
+      return DateFormat('dd-MM-yyyy').parse(raw);
+    } catch (_) {
+      return DateFormat('dd/MM/yyyy').parse(raw); // 🔥 ADD THIS
+    }
+  }
+}
+
+bool _isMonthValid(int year, int monthIndex) {
+  DateTime now = DateTime.now();
+  DateTime selected = DateTime(year, monthIndex);
+
+  // ❌ Future year
+  if (year > now.year) return false;
+
+  // ❌ Future month in current year
+  if (year == now.year && monthIndex >= now.month) return false;
+
+  // ❌ Before DOJ month
+  if (employeeDOJ != null) {
+    DateTime joinMonth =
+        DateTime(employeeDOJ!.year, employeeDOJ!.month);
+
+    if (selected.isBefore(joinMonth)) return false;
+  }
+
+  return true;
+}
+
+  List<String> get _years {
+  if (employeeDOJ == null) {
+    return [selectedYear]; // temporary fallback
+  }
+
+  int joinYear = employeeDOJ!.year;
+  int currentYear = DateTime.now().year;
+
+  return List.generate(
+    currentYear - joinYear + 1,
+    (index) => (joinYear + index).toString(),
+  );
+}
+
+
+// showing no of days in monthwise(30 or 31)
+  int getTotalDaysInMonth(int year, int month) {
+  return DateTime(year, month + 1, 0).day;
+}
+
+  double totalWorkingDays = 0;
+double presentDays = 0;
+double halfDays = 0;
+double leaveDays = 0;
+double absentDays = 0;
+double lopDays = 0;
+double lopAmount = 0;
+
 
  late String selectedMonth;
   late String selectedYear;
@@ -44,7 +111,24 @@ class _PayslipScreenState extends State<PayslipScreen> {
   Map<String, dynamic> deductions = {};
   Map<String, dynamic> employeeData = {};
 
-  
+  void _autoSelectLatestValidMonth() {
+  if (employeeDOJ == null) return;
+
+  DateTime now = DateTime.now();
+  DateTime lastCompletedMonth = DateTime(now.year, now.month - 1);
+
+  DateTime joiningMonth =
+      DateTime(employeeDOJ!.year, employeeDOJ!.month);
+
+  DateTime target =
+      lastCompletedMonth.isBefore(joiningMonth)
+          ? joiningMonth
+          : lastCompletedMonth;
+
+  selectedYear = target.year.toString();
+  selectedMonth = _months[target.month - 1];
+}
+
 
   @override
   void initState() {
@@ -62,135 +146,304 @@ class _PayslipScreenState extends State<PayslipScreen> {
     }
 
     selectedMonth = _months[prevMonth - 1]; // list is 0-based
-    fetchWorkingDaysForPayslip();
+    
     Future.delayed(Duration.zero, _fetchPayslipDetails);
   }
 
-  Future<void> fetchWorkingDaysForPayslip() async {
-    final employeeId = Provider.of<UserProvider>(context, listen: false).employeeId ?? '';
-    final now = DateTime.now();
-    workingDays = await fetchWorkingDays(employeeId, now.month, now.year);
-    setState(() {
-      isLoading = false;
-    });
+void _fixMonthForSelectedYear(int year) {
+  DateTime now = DateTime.now();
+  int currentYear = now.year;
+  int currentMonth = now.month;
+
+  int startMonth = 1;
+  int endMonth = 12;
+
+  if (employeeDOJ != null && year == employeeDOJ!.year) {
+    startMonth = employeeDOJ!.month;
   }
 
-  Future<int> fetchWorkingDays(String employeeId, int month, int year) async {
-    var url = Uri.parse("http://localhost:5000/attendance/attendance/history/$employeeId");
-    var response = await http.get(url);
+  if (year == currentYear) {
+    endMonth = currentMonth - 1;
+  }
 
-    if (response.statusCode == 200) {
-      List<dynamic> data = jsonDecode(response.body);
+  if (endMonth < startMonth) return;
 
-      final workdays = data.where((item) {
-        if (item['date'] != null &&
-            item['loginTime'] != null &&
-            item['loginTime'].toString().isNotEmpty) {
-          final dateParts = item['date'].split('-'); // dd-MM-yyyy
-          int m = int.parse(dateParts[1]);
-          int y = int.parse(dateParts[2]);
-          return m == month && y == year;
-        }
-        return false;
-      }).length;
+  // choose latest valid month in that year
+  int validMonth = endMonth;
 
-      return workdays;
-    } else {
-      print("❌ Failed to fetch attendance for $employeeId");
-      return 0;
+  selectedMonth = _months[validMonth - 1];
+}
+
+  Future<void> fetchMonthlyPayrollSummary() async {
+  final employeeId = Provider.of<UserProvider>(context, listen: false).employeeId ?? "";
+  if (employeeId.isEmpty) return;
+
+  final monthIndex = _months.indexOf(selectedMonth) + 1;
+  final year = int.parse(selectedYear);
+
+  // 1) fetch attendance month
+  final resAttendance = await http.get(Uri.parse(
+    "https://company-04bz.onrender.com/attendance/attendance/month?year=$year&month=$monthIndex",
+  ));
+
+  // 2) fetch approved leaves month
+  final resLeaves = await http.get(Uri.parse(
+    "https://company-04bz.onrender.com/apply/approved/month?year=$year&month=$monthIndex",
+  ));
+
+  // 3) fetch holidays month
+  final resHolidays = await http.get(Uri.parse(
+    "https://company-04bz.onrender.com/notifications/holiday/employee/ADMIN?month=$selectedMonth&year=$year",
+  ));
+
+  List<Map<String, dynamic>> monthlyAttendance = [];
+  List<Map<String, dynamic>> approvedLeaves = [];
+  Set<String> holidayDateKeys = {};
+
+  if (resAttendance.statusCode == 200) {
+    monthlyAttendance = List<Map<String, dynamic>>.from(jsonDecode(resAttendance.body));
+  }
+
+  if (resLeaves.statusCode == 200) {
+    approvedLeaves = List<Map<String, dynamic>>.from(jsonDecode(resLeaves.body));
+  }
+
+  if (resHolidays.statusCode == 200) {
+    final List data = jsonDecode(resHolidays.body);
+    holidayDateKeys = data.map<String>((h) {
+      return "${h["day"]}-$monthIndex-${h["year"]}";
+    }).toSet();
+  }
+
+  // ---- helper functions (same like AttendanceList) ----
+  // List<DateTime> getDaysInMonth(int year, int month) {
+  //   final lastDay = DateTime(year, month + 1, 0).day;
+  //   return List.generate(lastDay, (index) => DateTime(year, month, index + 1));
+  // }
+
+  bool isWeekend(DateTime date) =>
+      date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+
+  bool isHoliday(DateTime date) {
+    final key = "${date.day}-${date.month}-${date.year}";
+    return holidayDateKeys.contains(key);
+  }
+
+  // Attendance Map (only this employee)
+  final attendanceMap = <String, String>{}; // dateKey -> type
+  for (final a in monthlyAttendance) {
+    if (a["employeeId"] == employeeId) {
+      final date = a["date"]; // dd-MM-yyyy
+      final type = a["attendanceType"] ?? "P";
+      attendanceMap[date] = type;
     }
   }
 
-  Future<void> _fetchPayslipDetails() async {
-    final employeeId = Provider.of<UserProvider>(
-      context,
-      listen: false,
-    ).employeeId;
+  // Leave Map (only this employee)
+  final leaveSet = <String>{};
+  for (final leave in approvedLeaves) {
+    if (leave["employeeId"] != employeeId) continue;
 
-    if (employeeId == null) {
-      print("❌ Employee ID is null");
+    // final fromRaw = DateTime.parse(leave["fromDate"]).toLocal();
+    // final toRaw = DateTime.parse(leave["toDate"]).toLocal();
+    final fromRaw = safeParseDate(leave["fromDate"]).toLocal();
+final toRaw = safeParseDate(leave["toDate"]).toLocal();
+
+
+    final from = DateTime(fromRaw.year, fromRaw.month, fromRaw.day);
+    final to = DateTime(toRaw.year, toRaw.month, toRaw.day);
+
+    for (DateTime d = from; !d.isAfter(to); d = d.add(const Duration(days: 1))) {
+      leaveSet.add(DateFormat("dd-MM-yyyy").format(d));
+    }
+  }
+
+  // ---- calculate summary ----
+  // final days = getDaysInMonth(year, monthIndex);
+  final firstDayOfMonth = DateTime(year, monthIndex, 1);
+final lastDayOfMonth = DateTime(year, monthIndex + 1, 0);
+// 🔥 FULL month working days (exclude weekends + holidays)
+double fullMonthTotal = 0;
+
+for (DateTime d = firstDayOfMonth;
+    !d.isAfter(lastDayOfMonth);
+    d = d.add(const Duration(days: 1))) {
+
+  if (isWeekend(d)) continue;
+  if (isHoliday(d)) continue;
+
+  fullMonthTotal += 1;
+}
+
+
+// 🔥 Determine effective start date (DOJ proration)
+DateTime effectiveStart = firstDayOfMonth;
+
+if (employeeDOJ != null &&
+    employeeDOJ!.year == year &&
+    employeeDOJ!.month == monthIndex) {
+  effectiveStart = DateTime(
+    employeeDOJ!.year,
+    employeeDOJ!.month,
+    employeeDOJ!.day,
+  );
+}
+
+// 🔥 Generate only eligible days
+List<DateTime> days = [];
+
+for (DateTime d = effectiveStart;
+    !d.isAfter(lastDayOfMonth);
+    d = d.add(const Duration(days: 1))) {
+  days.add(d);
+}
+
+
+  double total = 0;
+  double present = 0;
+  double half = 0;
+  double leave = 0;
+
+  for (final d in days) {
+    // completed month → no need to ignore future date logic
+    if (isWeekend(d)) continue;
+    if (isHoliday(d)) continue;
+
+    total += 1;
+
+    final key = DateFormat("dd-MM-yyyy").format(d);
+
+    // Leave has higher priority than attendance
+    if (leaveSet.contains(key)) {
+      leave += 1;
+      continue;
+    }
+
+    final status = attendanceMap[key];
+
+    if (status == "P") {
+      present += 1;
+    } else if (status == "HL") {
+      half += 0.5;
+    } else {
+      // if no record or status is A → absent
+    }
+  }
+
+  final absent = total - present - half - leave;
+
+  // Eligible leave = 3
+  const eligibleLeave = 3.0;
+final extraLeaveLop = (leave - eligibleLeave) > 0 ? (leave - eligibleLeave) : 0.0;
+final lop = absent + extraLeaveLop;
+
+  setState(() {
+    totalWorkingDays = total.toDouble();
+    presentDays = present.toDouble();
+    halfDays = half.toDouble();
+    leaveDays = leave.toDouble();
+    absentDays = absent.toDouble();
+    lopDays = lop.toDouble();
+    fullMonthWorkingDays = fullMonthTotal; 
+  });
+}
+
+  Future<void> _fetchPayslipDetails() async {
+  final employeeId =
+      Provider.of<UserProvider>(context, listen: false).employeeId;
+
+  if (employeeId == null) return;
+
+  final url = Uri.parse(
+    'https://company-04bz.onrender.com/get-payslip-details?employee_id=$employeeId&year=$selectedYear&month=$selectedMonth',
+  );
+
+  try {
+    final response = await http.get(url);
+
+    if (response.statusCode != 200) {
+      print("❌ Failed to fetch payslip");
       return;
     }
 
-    final url = Uri.parse(
-      'http://localhost:5000/get-payslip-details?employee_id=$employeeId&year=$selectedYear&month=$selectedMonth',
-    );
+    final data = jsonDecode(response.body);
 
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        String formattedDate = '';
-        final rawDate = data['date_of_joining'];
-        if (rawDate != null && rawDate is String && rawDate.isNotEmpty) {
-          try {
-            final parsedDate = DateTime.parse(rawDate);
-            formattedDate = DateFormat('dd-MM-yyyy').format(parsedDate);
-          } catch (e) {
-            formattedDate = rawDate;
-          }
-        }
-        // 👇 If backend didn't send workdays, calculate from attendance
-      // int noOfWorkdays = int.tryParse(data['no_of_workdays']?.toString() ?? '0') ?? 0;
-      // if (noOfWorkdays == 0) {
-        final monthIndex = _months.indexOf(selectedMonth) + 1;
-        int noOfWorkdays = await fetchWorkingDays(employeeId, monthIndex, int.parse(selectedYear));
-
-        // Optionally update backend payslip with correct workdays
-        // await _updateWorkdaysInBackend(employeeId, selectedYear, selectedMonth, noOfWorkdays);
-      // }
-
-        setState(() {
-          earnings = data['earnings'] ?? {};
-          deductions = data['deductions'] ?? {};
-          employeeData = {
-            'employee_name': (data['employee_name'] ?? '').toString(),
-            'employee_id': (data['employee_id'] ?? '').toString(),
-            'designation': (data['designation'] ?? '').toString(),
-            'location': (data['location'] ?? '').toString(),
-            // 'no_of_workdays': (data['no_of_workdays'] ?? '').toString(),
-            'no_of_workdays': noOfWorkdays.toString(),
-            'date_of_joining': formattedDate,
-            'bank_name': (data['bank_name'] ?? '').toString(),
-            'account_no': (data['account_no'] ?? '').toString(),
-            'pan': (data['pan'] ?? '').toString(),
-            'uan': (data['uan'] ?? '').toString(),
-            'esic_no': (data['esic_no'] ?? '').toString(),
-            'lop': (data['lop'] ?? '').toString(),
-          };
-        });
-      } else {
-        print("❌ Failed to fetch payslip: ${response.statusCode}");
-      }
-    } catch (e) {
-      print("❌ Network error: $e");
-    }
+    // ✅ 1️⃣ Parse DOJ FIRST
+    final rawDate = data['date_of_joining'];
+    if (rawDate != null && rawDate.toString().isNotEmpty) {
+      final parsedDate = safeParseDate(rawDate);
+      if (employeeDOJ == null) {
+    employeeDOJ = parsedDate;
+    _autoSelectLatestValidMonth(); // 🔥 only first time
   }
-//   Future<void> _updateWorkdaysInBackend(
-//     String employeeId, String year, String month, int workdays) async {
-//   try {
-//     final url = Uri.parse("http://localhost:5000/payslip/update-workdays");
-//     final response = await http.post(
-//       url,
-//       headers: {"Content-Type": "application/json"},
-//       body: jsonEncode({
-//         "employee_id": employeeId,
-//         "year": year,
-//         "month": month,
-//         "no_of_workdays": workdays,
-//       }),
-//     );
+    }
 
-//     if (response.statusCode == 200) {
-//       print("✅ Workdays updated in backend");
-//     } else {
-//       print("❌ Failed to update backend: ${response.body}");
-//     }
-//   } catch (e) {
-//     print("❌ Error updating backend: $e");
-//   }
-// }
+    // ✅ 3️⃣ Assign earnings/deductions
+    earnings = data['earnings'] ?? {};
+    deductions = data['deductions'] ?? {};
+
+    if (earnings.isEmpty && deductions.isEmpty) {
+      setState(() {
+        noPayslipAvailable = true;
+        employeeData = {};
+      });
+      return;
+    } else {
+      noPayslipAvailable = false;
+    }
+
+    // ✅ 4️⃣ Calculate Attendance
+    await fetchMonthlyPayrollSummary();
+
+    // ✅ 5️⃣ Salary Calculations
+    final gross =
+        double.tryParse(earnings['GrossTotalSalary']?.toString() ?? "0") ?? 0;
+
+    final otherDeduction =
+        double.tryParse(deductions['TotalDeductions']?.toString() ?? "0") ?? 0;
+
+    // 🔥 Calculate FULL month working days (for divisor)
+int monthIndex = _months.indexOf(selectedMonth) + 1;
+
+    double perDaySalary =
+    fullMonthWorkingDays > 0 ? gross / fullMonthWorkingDays : 0;
+
+double salaryBeforeLop = perDaySalary * totalWorkingDays;
+
+lopAmount = perDaySalary * lopDays;
+
+double newNetSalary =
+    salaryBeforeLop - otherDeduction - lopAmount;
+
+    deductions['LOP Amount'] = lopAmount.toStringAsFixed(2);
+    deductions['NetSalary'] = newNetSalary.toStringAsFixed(2);
+
+    // final monthIndex = _months.indexOf(selectedMonth) + 1;
+    final totalMonthDays =
+        getTotalDaysInMonth(int.parse(selectedYear), monthIndex);
+
+    setState(() {
+      employeeData = {
+        'employee_name': (data['employee_name'] ?? '').toString(),
+        'employee_id': (data['employee_id'] ?? '').toString(),
+        'designation': (data['designation'] ?? '').toString(),
+        'location': (data['location'] ?? '').toString(),
+        'no_of_workdays': totalMonthDays.toString(),
+        'date_of_joining':
+            DateFormat('dd-MM-yyyy').format(employeeDOJ!),
+        'bank_name': (data['bank_name'] ?? '').toString(),
+        'account_no': (data['account_no'] ?? '').toString(),
+        'pan': (data['pan'] ?? '').toString(),
+        'uan': (data['uan'] ?? '').toString(),
+        'esic_no': (data['esic_no'] ?? '').toString(),
+        'lop': lopDays.toStringAsFixed(1),
+      };
+    });
+  } catch (e) {
+    print("❌ Network error: $e");
+  }
+}
+
 
 
   Future<void> _generatePdf() async {
@@ -270,10 +523,10 @@ class _PayslipScreenState extends State<PayslipScreen> {
                           'Account No', employeeData['account_no']),
                       _detailRow('Location', employeeData['location'], 'UAN',
                           employeeData['uan']),
-                      _detailRow('No.Of Days Worked',
+                      _detailRow('No.Of Days',
                           employeeData['no_of_workdays'], 'ESIC No',
                           employeeData['esic_no']),
-                      _detailRow('PAN', employeeData['pan'], 'LOP',
+                      _detailRow('PAN', employeeData['pan'], 'LOP Days',
                           employeeData['lop']),
                     ],
                   ),
@@ -386,20 +639,38 @@ class _PayslipScreenState extends State<PayslipScreen> {
             const SizedBox(height: 12),
             _payslipHeader(),
             const SizedBox(height: 12),
-            _employeeDetails(),
-            const SizedBox(height: 12),
-            _salaryDetails(),
+            if (noPayslipAvailable)
+  Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(40),
+    alignment: Alignment.center,
+    child: const Text(
+      "No payslip available for this month",
+      style: TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+        color: Colors.white70,
+      ),
+    ),
+  )
+else ...[
+  _employeeDetails(),
+  const SizedBox(height: 12),
+  _salaryDetails(),
+],
+
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _button(
-                  Icons.picture_as_pdf,
-                  'Payslips',
-                  Colors.blueGrey,
-                  _generatePdf,
-                ),
-                _outlinedButton(Icons.download, 'Download', _generatePdf),
+  Icons.picture_as_pdf,
+  'Payslips',
+  noPayslipAvailable ? Colors.grey : Colors.blueGrey,
+  noPayslipAvailable ? () {} : _generatePdf,
+),
+
+                _outlinedButton(Icons.download, 'Download', noPayslipAvailable ? () {} : _generatePdf),
                 // _filledButton('Send'),
               ],
             ),
@@ -413,6 +684,7 @@ class _PayslipScreenState extends State<PayslipScreen> {
   DateTime now = DateTime.now();
   int currentYear = now.year;
   int currentMonth = now.month; // current month (1–12)
+  
 
   return Row(
     mainAxisAlignment: MainAxisAlignment.center,
@@ -424,17 +696,34 @@ class _PayslipScreenState extends State<PayslipScreen> {
           int monthIndex = entry.key + 1; // 1-based index
           String month = entry.value;
 
-          bool isEnabled = true;
+          bool isEnabled = false;
 
-          if (selectedYear == currentYear.toString()) {
-            // Only allow months <= previous month
-            isEnabled = monthIndex < currentMonth;
-          } else if (int.parse(selectedYear) > currentYear) {
-            // Future year → disable all
-            isEnabled = false;
-          }
-          // Past year → always enabled
+int year = int.parse(selectedYear);
 
+if (employeeDOJ != null) {
+
+  DateTime monthDate = DateTime(year, monthIndex);
+
+  // ❌ Disable if before joining month
+  if (monthDate.isBefore(DateTime(employeeDOJ!.year, employeeDOJ!.month))) {
+    isEnabled = false;
+  }
+
+  // ❌ Disable future months
+  else if (year == currentYear && monthIndex >= currentMonth) {
+    isEnabled = false;
+  }
+
+  // ❌ Disable future years
+  else if (year > currentYear) {
+    isEnabled = false;
+  }
+
+  // ✅ Otherwise enable
+  else {
+    isEnabled = true;
+  }
+}
           return DropdownMenuItem(
             value: month,
             enabled: isEnabled, // 👈 disable future months
@@ -447,29 +736,50 @@ class _PayslipScreenState extends State<PayslipScreen> {
           );
         }).toList(),
         onChanged: (value) {
-          if (value != null) {
-            setState(() => selectedMonth = value);
-            _fetchPayslipDetails();
-          }
-        },
+  if (value != null) {
+    setState(() {
+      selectedMonth = value;   // ✅ FIXED
+    });
+    _fetchPayslipDetails();
+  }
+},
+
+
       ),
       const SizedBox(width: 20),
       DropdownButton<String>(
-        value: selectedYear,
-        dropdownColor: Colors.black,
-        items: _years.map((year) {
-          return DropdownMenuItem(
-            value: year,
-            child: Text(year, style: const TextStyle(color: Colors.white)),
-          );
-        }).toList(),
-        onChanged: (value) {
-          if (value != null) {
-            setState(() => selectedYear = value);
-            _fetchPayslipDetails();
-          }
-        },
+  value: _years.contains(selectedYear) ? selectedYear : null,
+  dropdownColor: Colors.black,
+  hint: const Text(
+    "Year",
+    style: TextStyle(color: Colors.white),
+  ),
+  items: _years.map((year) {
+    return DropdownMenuItem(
+      value: year,
+      child: Text(
+        year,
+        style: const TextStyle(color: Colors.white),
       ),
+    );
+  }).toList(),
+  onChanged: (value) {
+  if (value != null) {
+    setState(() {
+      selectedYear = value;
+
+      int monthIndex = _months.indexOf(selectedMonth) + 1;
+
+      if (!_isMonthValid(int.parse(value), monthIndex)) {
+        _fixMonthForSelectedYear(int.parse(value));
+      }
+    });
+
+    _fetchPayslipDetails();
+  }
+},
+),
+
     ],
   );
 }
@@ -535,7 +845,7 @@ class _PayslipScreenState extends State<PayslipScreen> {
           ),
           const Divider(),
           _infoRow(
-            'No.Of Days Worked',
+            'No.Of Days',
             employeeData['no_of_workdays'] ?? '',
             'ESIC No',
             employeeData['esic_no'] ?? '',
@@ -544,7 +854,7 @@ class _PayslipScreenState extends State<PayslipScreen> {
           _infoRow(
             'PAN',
             employeeData['pan'] ?? '',
-            'LOP',
+            'LOP Days',
             employeeData['lop'] ?? '',
           ),
         ],

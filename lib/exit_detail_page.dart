@@ -22,7 +22,7 @@ class _ExitDetailsPageState extends State<ExitDetailsPage> {
   Future<bool> saveExitDetails(Map<String, dynamic> data) async {
     try {
       final response = await http.post(
-        Uri.parse("http://localhost:5000/api/exitDetails"),
+        Uri.parse("https://company-04bz.onrender.com/api/exitDetails"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(data),
       );
@@ -48,7 +48,7 @@ class _ExitDetailsPageState extends State<ExitDetailsPage> {
 
   final request = http.MultipartRequest(
     'POST',
-    Uri.parse("http://localhost:5000/api/exitDetails/upload"),
+    Uri.parse("https://company-04bz.onrender.com/api/exitDetails/upload"),
   );
 
   request.fields['employeeId'] = employeeId;
@@ -89,7 +89,7 @@ class _ExitDetailsPageState extends State<ExitDetailsPage> {
   Future<Map<String, dynamic>?> fetchEmployeeById(String id) async {
     try {
       final response = await http.get(
-        Uri.parse("http://localhost:5000/api/employees/$id"),
+        Uri.parse("https://company-04bz.onrender.com/api/employees/$id"),
       );
 
       if (response.statusCode == 200) {

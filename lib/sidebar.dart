@@ -20,6 +20,7 @@ import 'employeenotification.dart';
 import 'admin_notification.dart';
 import 'attendance_login.dart';
 import 'company_events.dart';
+import 'superadmin_notification.dart';
 
 class Sidebar extends StatefulWidget {
   final Widget body;
@@ -34,6 +35,7 @@ class Sidebar extends StatefulWidget {
 class _SidebarState extends State<Sidebar> {
   String employeeName = "Employee";
   String position = "Position";
+  String? employeeImage;
 
   @override
   void initState() {
@@ -49,7 +51,7 @@ class _SidebarState extends State<Sidebar> {
 
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:5000/apply/get-employee-name/$employeeId'),
+        Uri.parse('https://company-04bz.onrender.com/api/employees/$employeeId'),
       );
 
       if (response.statusCode == 200) {
@@ -57,6 +59,7 @@ class _SidebarState extends State<Sidebar> {
         setState(() {
           employeeName = data['employeeName'] ?? 'Employee';
           position = data['position'] ?? 'Position';
+          employeeImage = data['employeeImage'];
         });
         // ✅ Update provider safely after API call
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -274,8 +277,10 @@ class _SidebarState extends State<Sidebar> {
           children: [
             const SizedBox(height: 40),
             ListTile(
-              leading: const CircleAvatar(
-                backgroundImage: AssetImage('assets/profile.png'),
+              leading: CircleAvatar(
+                backgroundImage: (employeeImage != null && employeeImage!.isNotEmpty)
+                    ? NetworkImage("https://company-04bz.onrender.com$employeeImage")
+                    : const AssetImage('assets/profile.png') as ImageProvider,
               ),
               title: Text(
                 employeeName,
@@ -328,12 +333,18 @@ class _SidebarState extends State<Sidebar> {
               Icons.notifications,
               'Notifications',
               context,
-              (role == "TL" || role == "Founder" || role == "HR")
-                  ? AdminNotificationsPage(empId: userProvider.employeeId ?? '')
-                  : EmployeeNotificationsPage(
+              (role == "Founder" || role == "HR")
+                  ? SuperadminNotificationsPage(
                       empId: userProvider.employeeId ?? '',
-                    ),
-            ),
+                    )
+                  : (role == "TL")
+                      ? AdminNotificationsPage(
+                          empId: userProvider.employeeId ?? '',
+                        )
+                      : EmployeeNotificationsPage(
+                          empId: userProvider.employeeId ?? '',
+                        ),
+             ),
             _sidebarTile(
               Icons.person,
               'Employee Profile',
@@ -347,12 +358,13 @@ class _SidebarState extends State<Sidebar> {
               context,
               const CompanyEventsScreen(),
             ),
-            _sidebarTile(
-              Icons.event,
-              'Recruitment',
-              context,
-              const RecruitmentHomePage(),
-            ),
+            if (role == "Founder" || role == "HR")
+              _sidebarTile(
+                Icons.event,
+                'Recruitment',
+                context,
+                const RecruitmentHomePage(),
+              ),
           ],
         ),
       ),

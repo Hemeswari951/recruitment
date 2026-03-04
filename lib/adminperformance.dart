@@ -1,3 +1,4 @@
+//adminperformance.dart
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -70,7 +71,7 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:5000/api/employees/domain/$domain'),
+        Uri.parse('https://company-04bz.onrender.com/api/employees/domain/$domain'),
       );
 
       if (response.statusCode == 200) {
@@ -88,140 +89,144 @@ class _PerformanceReviewPageState extends State<PerformanceReviewPage> {
   }
 
   Future<void> submitReview() async {
-    if (selectedEmpId == "EMP ID" ||
-        selectedEmpName == "EMP NAME" ||
-        communicationController.text.trim().isEmpty ||
-        attitudeController.text.trim().isEmpty ||
-        technicalKnowledgeController.text.trim().isEmpty ||
-        businessKnowledgeController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("⚠ Please fill in all fields before submitting."),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-      return;
-    }
-
-    final url = Uri.parse('http://localhost:5000/reviews');
-    final reviewerName =
-        Provider.of<UserProvider>(context, listen: false).employeeName ??
-        'Admin';
-    final body = {
-      "empId": selectedEmpId,
-      "empName": selectedEmpName,
-      "communication": communicationController.text,
-      "attitude": attitudeController.text,
-      "technicalKnowledge": technicalKnowledgeController.text,
-      "business": businessKnowledgeController.text,
-      "reviewedBy": reviewerName,
-      "flag": selectedFlag,
-    };
-
-    try {
-      final response = await http.post(
-        url,
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(body),
-      );
-
-      if (response.statusCode == 201) {
-        // ✅ First time success
+      if (selectedEmpId == "EMP ID" ||
+          selectedEmpName == "EMP NAME" ||
+          communicationController.text.trim().isEmpty ||
+          attitudeController.text.trim().isEmpty ||
+          technicalKnowledgeController.text.trim().isEmpty ||
+          businessKnowledgeController.text.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("✅ Review submitted successfully"),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        // 🔔 Create notifications
-        final notifUrl = Uri.parse("http://localhost:5000/notifications");
-        String currentMonth = getCurrentMonth();
-        final userProvider = Provider.of<UserProvider>(context, listen: false);
-        final adminName = userProvider.employeeName ?? 'Admin';
-
-        // 1️⃣ Employee notification
-        final employeeNotif = {
-          "month": currentMonth,
-          "category": "performance",
-          // "message": "Performance review for $selectedEmpName ($selectedEmpId) - $currentMonth",
-          "message": "Performance received from ($adminName) - $currentMonth",
-          "empId": selectedEmpId,
-          "senderName": adminName,
-          "senderId": widget.currentUserId,
-          "flag": selectedFlag,
-        };
-        await http.post(
-          notifUrl,
-          headers: {"Content-Type": "application/json"},
-          body: jsonEncode(employeeNotif),
-        );
-
-        // 2️⃣ Admin self-copy
-        final adminNotif = {
-          "month": currentMonth,
-          "category": "performance",
-          // "message": "You reviewed $selectedEmpName ($selectedEmpId) - $currentMonth",
-          "message": "Performance sent to ($selectedEmpName) - $currentMonth",
-          "empId": widget.currentUserId, // ✅ logged-in admin’s own ID
-          "senderName": adminName,
-          "senderId": widget.currentUserId,
-          "flag": selectedFlag,
-        };
-        await http.post(
-          notifUrl,
-          headers: {"Content-Type": "application/json"},
-          body: jsonEncode(adminNotif),
-        );
-
-        // ✅ Reset form
-        communicationController.clear();
-        attitudeController.clear();
-        technicalKnowledgeController.clear();
-        businessKnowledgeController.clear();
-        setState(() {
-          selectedEmpId = "EMP ID";
-          selectedEmpName = "EMP NAME";
-          selectedFlag = "Green Flag";
-        });
-
-        // ✅ Navigate to Notification screen
-        Future.delayed(const Duration(milliseconds: 300), () {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) =>
-                  AdminNotificationsPage(empId: widget.currentUserId),
-            ),
-          );
-        });
-      } else if (response.statusCode == 400) {
-        // ❌ Duplicate review → stay on same page
-        final data = jsonDecode(response.body);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("⚠ ${data['message']}"),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        // 🔥 No navigation here → user stays on the review page
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("❌ Failed to submit review"),
+            content: Text("⚠ Please fill in all fields before submitting."),
             backgroundColor: Colors.redAccent,
           ),
         );
+        return;
       }
-    } catch (e) {
+
+      setState(() => isLoading = true); // Added loading state
+
+      final url = Uri.parse('https://company-04bz.onrender.com/reviews');
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final reviewerName = userProvider.employeeName ?? 'Admin';
+      
+      final body = {
+        "empId": selectedEmpId,
+        "empName": selectedEmpName,
+        "communication": communicationController.text,
+        "attitude": attitudeController.text,
+        "technicalKnowledge": technicalKnowledgeController.text,
+        "business": businessKnowledgeController.text,
+        "reviewedBy": reviewerName,
+        "flag": selectedFlag,
+      };
+
+      try {
+        final response = await http.post(
+          url,
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(body),
+        );
+
+        if (response.statusCode == 201) {
+            final reviewData = jsonDecode(response.body);
+            final String reviewId = (reviewData['id'] ?? reviewData['_id'] ?? "").toString();
+            final String currentMonth = getCurrentMonth();
+            final int currentYear = DateTime.now().year;
+
+            final notifUrl = Uri.parse("https://company-04bz.onrender.com/notifications");
+
+            // 🔹 Shared Performance Data (The actual review content)
+            final Map<String, dynamic> performanceFields = {
+              "month": currentMonth,
+              "year": currentYear,
+              "category": "performance",
+              "flag": selectedFlag,
+              "senderName": reviewerName, 
+              // "receiverId": selectedEmpId,  
+              "senderId": widget.currentUserId,
+              "reviewId": reviewId,
+              "empName": selectedEmpName, // Always store the Subject's name
+              "communication": communicationController.text,
+              "attitude": attitudeController.text,
+              "technicalKnowledge": technicalKnowledgeController.text,
+              "business": businessKnowledgeController.text,
+            };
+
+            // 🔹 1. Notification for the EMPLOYEE (The one being reviewed)
+            await http.post(
+              notifUrl,
+              headers: {"Content-Type": "application/json"},
+              body: jsonEncode({
+                ...performanceFields,
+                "empId": selectedEmpId,
+                "receiverId": selectedEmpId,      
+                "message": "Performance review received from $reviewerName - $currentMonth",
+              }),
+            );
+
+            // 🔹 2. Notification for the ADMIN (Self-copy for history)
+            await http.post(
+              notifUrl,
+              headers: {"Content-Type": "application/json"},
+              body: jsonEncode({
+                ...performanceFields,
+                "empId": widget.currentUserId,
+                "receiverId": selectedEmpId,  
+                "message": "Performance review sent to $selectedEmpName - $currentMonth",
+              }),
+            );
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("✅ Review submitted successfully"),
+              backgroundColor: Colors.green,
+            ),
+          );
+
+          // ✅ Reset form
+          _clearForm();
+
+          // ✅ Navigate to Notification screen
+          Future.delayed(const Duration(milliseconds: 300), () {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) =>
+                    AdminNotificationsPage(empId: widget.currentUserId),
+              ),
+            );
+          });
+        } else {
+          // Handle errors (Duplicate reviews, etc.)
+          final data = jsonDecode(response.body);
+          _showError(data['message'] ?? "Failed to submit");
+        }
+      } catch (e) {
+        _showError("Error: $e");
+      } finally {
+        setState(() => isLoading = false);
+      }
+    }
+
+    // Helper methods to keep code clean
+    void _clearForm() {
+      communicationController.clear();
+      attitudeController.clear();
+      technicalKnowledgeController.clear();
+      businessKnowledgeController.clear();
+      setState(() {
+        selectedEmpId = "EMP ID";
+        selectedEmpName = "EMP NAME";
+        selectedFlag = "Green Flag";
+      });
+    }
+
+    void _showError(String msg) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("❌ Error: $e"),
-          backgroundColor: Colors.redAccent,
-        ),
+        SnackBar(content: Text(msg), backgroundColor: Colors.redAccent),
       );
     }
-  }
 
   @override
   Widget build(BuildContext context) {

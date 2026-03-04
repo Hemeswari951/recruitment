@@ -23,6 +23,7 @@ const RevisedOfferLetterSchema = new mongoose.Schema(
     ctc: { type: String, required: true },
     doj: { type: String, required: true },
     signdate: { type: String, required: true },
+    salaryFrom: { type: String, required: true },
     pdfFile: { type: String, required: true }, // Stores the Base64 encoded PDF
   },
   { timestamps: true }

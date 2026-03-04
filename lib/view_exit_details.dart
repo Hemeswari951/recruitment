@@ -27,7 +27,7 @@ class _ViewExitPageState extends State<ViewExitPage> {
   Future<void> fetchExitDetails() async {
     try {
       final response = await http.get(
-        Uri.parse("http://localhost:5000/api/exitDetails"),
+        Uri.parse("https://company-04bz.onrender.com/api/exitDetails"),
       );
 
       if (response.statusCode == 200) {
@@ -47,7 +47,7 @@ class _ViewExitPageState extends State<ViewExitPage> {
   Future<void> deleteExitRecord(String id) async {
     try {
       final response = await http.delete(
-        Uri.parse("http://localhost:5000/api/exitDetails/$id"),
+        Uri.parse("https://company-04bz.onrender.com/api/exitDetails/$id"),
       );
 
       if (response.statusCode == 200) {
@@ -300,7 +300,7 @@ class _ViewExitPageState extends State<ViewExitPage> {
           icon: const Icon(Icons.picture_as_pdf, color: Colors.blue),
           onPressed: () {
             final fileName = e["exitDocument"];
-            final url = "http://localhost:5000/api/exitDetails/file/$fileName";
+            final url = "https://company-04bz.onrender.com/api/exitDetails/file/$fileName";
 
             // Open in browser (Web) or launch externally
             _openPDF(url);

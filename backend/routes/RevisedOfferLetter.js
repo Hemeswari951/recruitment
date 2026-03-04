@@ -1,3 +1,4 @@
+//backend/routes/RevisedOfferLetter.js
 const router = require("express").Router();
 const RevisedOfferLetter = require("../models/RevisedOfferLetter");
 
@@ -14,6 +15,7 @@ router.post("/", async (req, res) => {
       ctc,
       doj,
       signdate,
+      salaryFrom,
       pdfFile,
     } = req.body;
 
@@ -26,6 +28,7 @@ router.post("/", async (req, res) => {
       ctc,
       doj,
       signdate,
+      salaryFrom,
       pdfFile,
     });
 
@@ -62,6 +65,7 @@ router.put("/:id", async (req, res) => {
       ctc,
       doj,
       signdate,
+      salaryFrom,
       pdfFile,
     } = req.body;
 
@@ -76,6 +80,7 @@ router.put("/:id", async (req, res) => {
         ctc,
         doj,
         signdate,
+        salaryFrom,
         pdfFile, // Also update the regenerated PDF
       },
       { new: true } // This option returns the updated document

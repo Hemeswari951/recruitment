@@ -74,7 +74,7 @@ class _ExperiencePageState extends State<ExperiencePage> {
   final _formKey = GlobalKey<FormState>();
 
   // Replace with your backend base URL
-  final String backendBaseUrl = "http://localhost:5000";
+  final String backendBaseUrl = "https://company-04bz.onrender.com";
 
   List<Experience> _items = [];
   bool _loading = false;
@@ -448,23 +448,144 @@ class _ExperiencePageState extends State<ExperiencePage> {
     );
   }
 
+  // Future<void> _pickDate(TextEditingController controller) async {
+  //   DateTime initial = DateTime.now();
+  //   try {
+  //     if (controller.text.isNotEmpty) {
+  //       initial = DateFormat('dd/MM/yyyy').parse(controller.text);
+  //     }
+  //   } catch (_) {}
+  //   final picked = await showDatePicker(
+  //     context: context,
+  //     initialDate: initial,
+  //     firstDate: DateTime(1990),
+  //     lastDate: DateTime(2100),
+  //   );
+  //   if (picked != null) {
+  //     controller.text = DateFormat('dd/MM/yyyy').format(picked);
+  //   }
+  // }
   Future<void> _pickDate(TextEditingController controller) async {
-    DateTime initial = DateTime.now();
-    try {
-      if (controller.text.isNotEmpty) {
-        initial = DateFormat('dd/MM/yyyy').parse(controller.text);
-      }
-    } catch (_) {}
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(1990),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) {
-      controller.text = DateFormat('dd/MM/yyyy').format(picked);
+  DateTime initialDate = DateTime.now();
+
+  try {
+    if (controller.text.isNotEmpty) {
+      initialDate = DateFormat('dd/MM/yyyy').parse(controller.text);
     }
-  }
+  } catch (_) {}
+
+  // helper
+  int daysInMonth(int y, int m) => DateTime(y, m + 1, 0).day;
+
+  await showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      DateTime selectedDate = initialDate;
+      DateTime visibleMonth = DateTime(initialDate.year, initialDate.month, 1);
+
+      return StatefulBuilder(
+        builder: (context, setState) {
+          // When user changes month/year from dropdown, clamp the day and update selectedDate
+          void jumpTo(int year, int month) {
+            final maxDay = daysInMonth(year, month);
+            final day = selectedDate.day <= maxDay ? selectedDate.day : maxDay;
+            selectedDate = DateTime(year, month, day);
+            visibleMonth = DateTime(year, month, 1);
+            // Changing the `visibleMonth` value below will also rebuild the CalendarDatePicker
+            setState(() {});
+          }
+
+          // When user picks a date in the calendar, reflect it in both selectedDate & visibleMonth
+          void onDatePicked(DateTime d) {
+            selectedDate = d;
+            visibleMonth = DateTime(d.year, d.month, 1);
+            setState(() {});
+          }
+
+          return AlertDialog(
+            contentPadding: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            content: SizedBox(
+              width: MediaQuery.of(context).size.width * 0.45,
+              height: MediaQuery.of(context).size.height * 0.55,
+              child: Column(
+                children: [
+                  // header (month + year dropdown)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple.shade50,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Month Dropdown
+                        DropdownButton<int>(
+                          value: visibleMonth.month,
+                          underline: const SizedBox(),
+                          items: List.generate(12, (index) {
+                            return DropdownMenuItem(
+                              value: index + 1,
+                              child: Text(DateFormat('MMMM').format(DateTime(0, index + 1))),
+                            );
+                          }),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            jumpTo(visibleMonth.year, value);
+                          },
+                        ),
+
+                        const SizedBox(width: 8),
+
+                        // Year Dropdown
+                        DropdownButton<int>(
+                          value: visibleMonth.year,
+                          underline: const SizedBox(),
+                          items: List.generate(40, (i) {
+                            final year = 1990 + i;
+                            return DropdownMenuItem(value: year, child: Text(year.toString()));
+                          }),
+                          onChanged: (value) {
+                            if (value == null) return;
+                            jumpTo(value, visibleMonth.month);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Calendar: give it a Key derived from visibleMonth so changing visibleMonth rebuilds it.
+                  Expanded(
+                    child: CalendarDatePicker(
+                      key: ValueKey('${visibleMonth.year}-${visibleMonth.month}'), // force rebuild
+                      initialDate: selectedDate,
+                      firstDate: DateTime(1990),
+                      lastDate: DateTime(2100),
+                      currentDate: DateTime.now(),
+                      initialCalendarMode: DatePickerMode.day,
+                      onDateChanged: onDatePicked,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+              TextButton(
+                onPressed: () {
+                  controller.text = DateFormat('dd/MM/yyyy').format(selectedDate);
+                  Navigator.pop(context);
+                },
+                child: const Text("OK"),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
 
   Future<void> _exportFilteredPdf() async {
     try {
@@ -539,15 +660,15 @@ class _ExperiencePageState extends State<ExperiencePage> {
     return matchesSearch && matchesMonth && matchesYear;
   }
 
-  String _formatDate(String? dateString) {
-    if (dateString == null || dateString.isEmpty) return 'N/A';
-    try {
-      final date = DateTime.parse(dateString);
-      return DateFormat('dd-MM-yyyy').format(date);
-    } catch (e) {
-      return dateString;
-    }
-  }
+  // String _formatDate(String? dateString) {
+  //   if (dateString == null || dateString.isEmpty) return 'N/A';
+  //   try {
+  //     final date = DateTime.parse(dateString);
+  //     return DateFormat('dd-MM-yyyy').format(date);
+  //   } catch (e) {
+  //     return dateString;
+  //   }
+  // }
 
   @override
   Widget build(BuildContext context) {

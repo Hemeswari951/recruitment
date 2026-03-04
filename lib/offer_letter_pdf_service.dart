@@ -8,10 +8,47 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'pdf_content_model.dart';
 
-/// - Requires assets/fonts/Calibri-Regular.ttf and assets/fonts/Calibri-Bold.ttf
-/// - Requires assets/offer_letter/offer_template.png
-/// - Optional signature at assets/signature/Sign_BG.png
+/// - Requires assets/fonts/Calibri-Regular.ttf and assets/fonts/Calibri-Bold.ttf (recommended)
+/// - If you need broader Unicode coverage (Devanagari etc.) add a Noto font to assets and pubspec.
+/// - Place your template image under assets/offer_letter/offer_template.png (or assets/offer_template.png)
+/// - Optional signature at assets/Sign_BG.png or assets/signature/Sign_BG.png
 class OfferLetterPdfService {
+  // Cached loaded fonts
+  pw.Font? _baseFont;
+  pw.Font? _boldFont;
+
+  // Attempt to load fonts (Calibri by default). On failure fall back to the package default font.
+  Future<void> _ensureFontsLoaded() async {
+    if (_baseFont != null && _boldFont != null) return;
+
+    try {
+      // Try Calibri first (as declared in your pubspec)
+      final ttfRegularData = await rootBundle.load('assets/fonts/Calibri-Regular.ttf');
+      final ttfBoldData = await rootBundle.load('assets/fonts/Calibri-Bold.ttf');
+
+      _baseFont = pw.Font.ttf(ttfRegularData);
+      _boldFont = pw.Font.ttf(ttfBoldData);
+      return;
+    } catch (_) {
+      // Try alternative font paths if you placed fonts differently
+    }
+
+    try {
+      final ttfRegularData = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+      final ttfBoldData = await rootBundle.load('assets/fonts/Roboto-Bold.ttf');
+
+      _baseFont = pw.Font.ttf(ttfRegularData);
+      _boldFont = pw.Font.ttf(ttfBoldData);
+      return;
+    } catch (_) {
+      // ignore
+    }
+
+    // Last resort fallback to the builtin (may have limited unicode coverage)
+    _baseFont = pw.Font.helvetica();
+    _boldFont = _baseFont!;
+  }
+
   String _formatDateTime(DateTime d) {
     final day = d.day.toString().padLeft(2, '0');
     final month = d.month.toString().padLeft(2, '0');
@@ -20,6 +57,7 @@ class OfferLetterPdfService {
   }
 
   String _formatDateString(String input) {
+    if (input.isEmpty) return input;
     // Try ISO first (e.g. "2025-11-26")
     try {
       final parsed = DateTime.parse(input);
@@ -42,11 +80,6 @@ class OfferLetterPdfService {
     }
   }
 
-  // String _getAcceptanceDateFormatted(DateTime now) {
-  //   final acceptanceDate = now.add(const Duration(days: 7));
-  //   return _formatDateTime(acceptanceDate);
-  // }
-
   static String _getMonthName(int month) {
     const months = [
       'January',
@@ -62,38 +95,76 @@ class OfferLetterPdfService {
       'November',
       'December',
     ];
+    if (month < 1 || month > 12) return '';
     return months[month - 1];
   }
 
+  /// Export a simple table (report) of many offer letters. Ensures fonts are loaded.
   Future<Uint8List> exportOfferLetterList(
     List<Map<String, dynamic>> letters,
   ) async {
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
 
-    pdf.addPage(
-      pw.Page(
-        build: (context) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text("Offer Letter Report", style: pw.TextStyle(fontSize: 24)),
-            pw.SizedBox(height: 20),
+    final baseFont = _baseFont ?? pw.Font.helvetica();
+    final boldFont = _boldFont ?? baseFont;
 
-            pw.Table.fromTextArray(
-              headers: ["ID", "Name", "Position", "Stipend", "Date"],
-              data: letters
-                  .map(
-                    (l) => [
-                      l["employeeId"],
-                      l["fullName"],
-                      l["position"],
-                      l["stipend"].toString(),
-                      l["createdAt"].toString().substring(0, 10),
-                    ],
-                  )
-                  .toList(),
+    // Prepare data rows safely
+    final rows = letters.map((l) {
+      final createdAt = l['createdAt']?.toString() ?? '';
+      String dateText = 'N/A';
+      if (createdAt.isNotEmpty) {
+        try {
+          dateText = createdAt.substring(0, 10);
+        } catch (_) {
+          dateText = createdAt;
+        }
+      }
+      return [
+        l['employeeId']?.toString() ?? 'N/A',
+        l['fullName']?.toString() ?? 'N/A',
+        l['position']?.toString() ?? 'N/A',
+        l['stipend']?.toString() ?? 'N/A',
+        dateText,
+      ];
+    }).toList();
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(24),
+        build: (context) {
+          return [
+            pw.Header(
+              level: 0,
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text('Offer Letter Report', style: pw.TextStyle(font: boldFont, fontSize: 20)),
+                  pw.Text(DateFormat('dd MMM yyyy').format(DateTime.now()), style: pw.TextStyle(font: baseFont)),
+                ],
+              ),
             ),
-          ],
-        ),
+            pw.SizedBox(height: 8),
+            pw.Table.fromTextArray(
+              headers: ['ID', 'Name', 'Position', 'Stipend', 'Date'],
+              data: rows,
+              headerStyle: pw.TextStyle(font: boldFont, fontSize: 11),
+              cellStyle: pw.TextStyle(font: baseFont, fontSize: 10),
+              headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+              columnWidths: {
+                0: const pw.FlexColumnWidth(1),
+                1: const pw.FlexColumnWidth(3),
+                2: const pw.FlexColumnWidth(2),
+                3: const pw.FlexColumnWidth(2),
+                4: const pw.FlexColumnWidth(2),
+              },
+              cellAlignment: pw.Alignment.centerLeft,
+            ),
+            pw.SizedBox(height: 12),
+            pw.Text('Total records: ${rows.length}', style: pw.TextStyle(font: baseFont)),
+          ];
+        },
       ),
     );
 
@@ -108,87 +179,78 @@ class OfferLetterPdfService {
     required String ctc,
     required String doj, // yyyy-mm-dd
     required String signdate, // yyyy-mm-dd
+    required String salaryFrom, // <-- new param
     required PdfContentModel content,
   }) async {
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
 
-    // Load template image
+    // Prepare fonts
+    final baseFont = _baseFont ?? pw.Font.helvetica();
+    final boldFont = _boldFont ?? baseFont;
+
+    // Load template image with robust fallbacks
     late pw.MemoryImage templateImage;
-    try {
-      final templateData = await rootBundle.load('assets/offer_template.png');
-      templateImage = pw.MemoryImage(templateData.buffer.asUint8List());
-    } catch (e) {
-      if (!kIsWeb) {
-        final file = File('/mnt/data/Relieving Letter - ZEAI Soft (1)-1.png');
-        final bytes = await file.readAsBytes();
-        templateImage = pw.MemoryImage(bytes);
-      } else {
-        throw Exception(
-          'Failed to load offer_template.png from assets (running on web, no fallback).',
-        );
-      }
-    }
 
-    // Load Calibri fonts from assets
-    final ttfRegularData = await rootBundle.load(
-      'assets/fonts/Calibri-Regular.ttf',
-    );
-    final ttfBoldData = await rootBundle.load('assets/fonts/Calibri-Bold.ttf');
-
-    final baseFont = pw.Font.ttf(ttfRegularData);
-    final boldFont = pw.Font.ttf(ttfBoldData);
+try {
+  final data = await rootBundle.load('assets/offer_template.png');
+  templateImage = pw.MemoryImage(data.buffer.asUint8List());
+} catch (e) {
+  throw Exception(
+    'Offer template image not found at assets/offer_template.png',
+  );
+}
 
     // Optional signature image
     pw.MemoryImage? signatureImage;
-    try {
-      final sigData = await rootBundle.load('assets/Sign_BG.png');
-      signatureImage = pw.MemoryImage(sigData.buffer.asUint8List());
-    } catch (_) {
-      if (!kIsWeb) {
-        try {
-          final f = File('/mnt/data/Sign_BG.png');
-          final b = await f.readAsBytes();
-          signatureImage = pw.MemoryImage(b);
-        } catch (_) {
-          signatureImage = null;
-        }
+    final signaturePaths = [
+      'assets/Sign_BG.png',
+      'assets/signature/Sign_BG.png',
+      'assets/signature/sign_bg.png',
+    ];
+    for (final p in signaturePaths) {
+      try {
+        final data = await rootBundle.load(p);
+        signatureImage = pw.MemoryImage(data.buffer.asUint8List());
+        break;
+      } catch (_) {
+        // ignore
       }
     }
+    if (signatureImage == null && !kIsWeb) {
+      try {
+        final f = File('/mnt/data/Sign_BG.png');
+        if (await f.exists()) {
+          final b = await f.readAsBytes();
+          signatureImage = pw.MemoryImage(b);
+        }
+      } catch (_) {}
+    }
 
-    // --- STYLES: Calibri (MS) at 12pt as requested ---
-    // Body and inline bold both use 12pt. Headings use bold 12pt as well (to match the request exactly).
-    // final double bodyFontSize = 13.0;
-    // pw.TextStyle bodyStyle = pw.TextStyle(font: baseFont, fontSize: bodyFontSize, height: 2.5, letterSpacing: 0.5);
-    // pw.TextStyle boldStyle = pw.TextStyle(font: boldFont, fontSize: bodyFontSize, height: 2.5, letterSpacing: 0.5);
-    // pw.TextStyle headingStyle = boldStyle;
-    // pw.TextStyle smallStyle = pw.TextStyle(font: baseFont, fontSize: 13.0, height: 1.0);
-    final double bodyFontSize = 13.0;
+    final double bodyFontSize = 12.0;
 
-    // body line spacing — set here (1.4 = comfortable, 1.6 = airy, 2.0 = very loose)
     pw.TextStyle bodyStyle = pw.TextStyle(
       font: baseFont,
       fontSize: bodyFontSize,
-      height: 2.0, // <-- increase this to increase space between lines
-      letterSpacing: 0.5, // usually 0.0 for normal tracking
+      height: 2.0,
+      letterSpacing: 0.5,
     );
 
     pw.TextStyle boldStyle = pw.TextStyle(
       font: boldFont,
       fontSize: bodyFontSize,
-      height: 1.6, // keep same leading for bold for consistency
+      height: 1.6,
       letterSpacing: 0.5,
     );
 
     pw.TextStyle headingStyle = boldStyle;
 
-    // small captions slightly tighter
-    pw.TextStyle smallStyle = pw.TextStyle(
-      font: baseFont,
-      fontSize: 11.0,
-      height: 1.3,
-    );
+    // pw.TextStyle smallStyle = pw.TextStyle(
+    //   font: baseFont,
+    //   fontSize: 11.0,
+    //   height: 1.3,
+    // );
 
-    // NEW 👉 Italic style for positions under signature
     pw.TextStyle smallItalicStyle = pw.TextStyle(
       font: baseFont,
       fontSize: 11.0,
@@ -204,7 +266,6 @@ class OfferLetterPdfService {
     // stipend formatting with commas
     String stipendFormatted;
     try {
-      // Sanitize the stipend string before parsing to handle inputs like "10,000" or "INR 10000"
       final sanitizedStipend = stipend.replaceAll(RegExp(r'[^0-9.]'), '');
       final n = double.parse(sanitizedStipend);
       stipendFormatted = NumberFormat('#,##0').format(n);
@@ -214,7 +275,6 @@ class OfferLetterPdfService {
 
     // Helper: build page with background image and content padding that matches template
     pw.Page buildTemplatePage(List<pw.Widget> bodyContent) {
-      // Adjust top padding if you need to nudge content up/down relative to the PNG header
       final contentPadding = const pw.EdgeInsets.fromLTRB(48, 125, 38, 20);
 
       final pageW = PdfPageFormat.a4.width;
@@ -238,9 +298,12 @@ class OfferLetterPdfService {
               ),
               pw.Padding(
                 padding: contentPadding,
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: bodyContent,
+                child: pw.DefaultTextStyle(
+                  style: bodyStyle,
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: bodyContent,
+                  ),
                 ),
               ),
             ],
@@ -248,6 +311,92 @@ class OfferLetterPdfService {
         },
       );
     }
+
+    // Helper to convert a template string with placeholders into a pw.TextSpan
+    pw.TextSpan buildTextSpanFromTemplate(
+      String template,
+      Map<String, String> values,
+      pw.TextStyle normal,
+      pw.TextStyle bold,
+    ) {
+      final tokenRegex = RegExp(r'(\{stipend\}|\{ctc\}|\{salaryFrom\}|\{fullName\})');
+      final parts = template.splitMapJoin(
+        tokenRegex,
+        onMatch: (m) => '||${m.group(0)}||', // mark tokens
+        onNonMatch: (n) => n,
+      ).split('||');
+
+      final children = <pw.TextSpan>[];
+      for (final part in parts) {
+        if (part == '') continue;
+        if (part == '{stipend}') {
+          children.add(pw.TextSpan(text: "Rs. $stipendFormatted/-", style: bold));
+        } else if (part == '{ctc}') {
+          children.add(pw.TextSpan(text: ctc, style: bold));
+        } else if (part == '{salaryFrom}') {
+          children.add(pw.TextSpan(text: values['salaryFrom'] ?? '', style: bold));
+        } else if (part == '{fullName}') {
+          children.add(pw.TextSpan(text: fullName, style: bold));
+        } else {
+          children.add(pw.TextSpan(text: part, style: normal));
+        }
+      }
+      return pw.TextSpan(children: children, style: normal);
+    }
+
+    pw.Widget numberedPoint({
+  required String number,
+  required String title,
+  required String body,
+  required pw.TextStyle bodyStyle,
+  required pw.TextStyle boldStyle,
+}) {
+  return pw.Row(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      // Number column (fixed width)
+      pw.SizedBox(
+        width: 18,
+        child: pw.Text("$number.", style: boldStyle),
+      ),
+
+      // Text column (wraps with proper indentation)
+      pw.Expanded(
+        child: pw.RichText(
+          textAlign: pw.TextAlign.justify,
+          text: pw.TextSpan(
+            children: [
+              pw.TextSpan(text: "$title ", style: boldStyle),
+              pw.TextSpan(text: body, style: bodyStyle),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
+}
+pw.Widget hangingNumberPoint({
+  required String number,
+  required String text,
+  required pw.TextStyle bodyStyle,
+}) {
+  return pw.Row(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.SizedBox(
+        width: 18,
+        child: pw.Text("$number.", style: bodyStyle),
+      ),
+      pw.Expanded(
+        child: pw.Text(
+          text,
+          style: bodyStyle,
+          textAlign: pw.TextAlign.justify,
+        ),
+      ),
+    ],
+  );
+}
 
     // ---------------- PAGE 1 ----------------
     final page1 = <pw.Widget>[
@@ -328,21 +477,15 @@ class OfferLetterPdfService {
       pw.SizedBox(height: 12),
       pw.Text("Compensation", style: headingStyle),
       pw.SizedBox(height: 6),
+
+      // Build compensation paragraph from template using placeholder replacement
       pw.RichText(
         textAlign: pw.TextAlign.justify,
-        text: pw.TextSpan(
-          style: bodyStyle,
-          children: [
-            pw.TextSpan(text: content.compensationBody.split('{stipend}')[0]),
-            pw.TextSpan(text: "Rs. $stipendFormatted/-", style: boldStyle),
-            pw.TextSpan(
-              text: content.compensationBody
-                  .split('{stipend}')[1]
-                  .split('{ctc}')[0],
-            ),
-            pw.TextSpan(text: ctc, style: boldStyle),
-            pw.TextSpan(text: content.compensationBody.split('{ctc}')[1]),
-          ],
+        text: buildTextSpanFromTemplate(
+          content.compensationBody,
+          {'salaryFrom': salaryFrom},
+          bodyStyle,
+          boldStyle,
         ),
       ),
 
@@ -385,94 +528,58 @@ class OfferLetterPdfService {
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            // 1
-            pw.RichText(
-              textAlign: pw.TextAlign.justify,
-              text: pw.TextSpan(
-                children: [
-                  pw.TextSpan(text: "1. Leave Accrual: ", style: boldStyle),
-                  pw.TextSpan(
-                    text: content.leaveAccrual.substring(17),
-                    style: bodyStyle,
-                  ),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 4),
+            numberedPoint(
+        number: "1",
+        title: "Leave Accrual:",
+        body: content.leaveAccrual.substring(17),
+        bodyStyle: bodyStyle,
+        boldStyle: boldStyle,
+      ),
+      pw.SizedBox(height: 6),
 
-            // 2
-            pw.RichText(
-              textAlign: pw.TextAlign.justify,
-              text: pw.TextSpan(
-                children: [
-                  pw.TextSpan(text: "2. Public Holidays: ", style: boldStyle),
-                  pw.TextSpan(
-                    text: content.publicHolidays.substring(18),
-                    style: bodyStyle,
-                  ),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 4),
+      numberedPoint(
+        number: "2",
+        title: "Public Holidays:",
+        body: content.publicHolidays.substring(18),
+        bodyStyle: bodyStyle,
+        boldStyle: boldStyle,
+      ),
+      pw.SizedBox(height: 6),
 
-            // 3
-            pw.RichText(
-              textAlign: pw.TextAlign.justify,
-              text: pw.TextSpan(
-                children: [
-                  pw.TextSpan(text: "3. Special Leave: ", style: boldStyle),
-                  pw.TextSpan(
-                    text: content.specialLeave.substring(16),
-                    style: bodyStyle,
-                  ),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 4),
+      numberedPoint(
+        number: "3",
+        title: "Special Leave:",
+        body: content.specialLeave.substring(16),
+        bodyStyle: bodyStyle,
+        boldStyle: boldStyle,
+      ),
+      pw.SizedBox(height: 6),
 
-            // 4
-            pw.RichText(
-              textAlign: pw.TextAlign.justify,
-              text: pw.TextSpan(
-                children: [
-                  pw.TextSpan(text: "4. Add Ons For Men: ", style: boldStyle),
-                  pw.TextSpan(
-                    text: content.addOnsForMen.substring(18),
-                    style: bodyStyle,
-                  ),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 4),
+      numberedPoint(
+        number: "4",
+        title: "Add Ons For Men:",
+        body: content.addOnsForMen.substring(18),
+        bodyStyle: bodyStyle,
+        boldStyle: boldStyle,
+      ),
+      pw.SizedBox(height: 6),
 
-            // 5
-            pw.RichText(
-              textAlign: pw.TextAlign.justify,
-              text: pw.TextSpan(
-                children: [
-                  pw.TextSpan(text: "5. Add Ons For Women: ", style: boldStyle),
-                  pw.TextSpan(
-                    text: content.addOnsForWomen.substring(20),
-                    style: bodyStyle,
-                  ),
-                ],
-              ),
-            ),
-            pw.SizedBox(height: 4),
+      numberedPoint(
+        number: "5",
+        title: "Add Ons For Women:",
+        body: content.addOnsForWomen.substring(20),
+        bodyStyle: bodyStyle,
+        boldStyle: boldStyle,
+      ),
+      pw.SizedBox(height: 6),
 
-            // 6
-            pw.RichText(
-              textAlign: pw.TextAlign.justify,
-              text: pw.TextSpan(
-                children: [
-                  pw.TextSpan(text: "6. Leave Requests: ", style: boldStyle),
-                  pw.TextSpan(
-                    text: content.leaveRequests.substring(17),
-                    style: bodyStyle,
-                  ),
-                ],
-              ),
-            ),
+      numberedPoint(
+        number: "6",
+        title: "Leave Requests:",
+        body: content.leaveRequests.substring(17),
+        bodyStyle: bodyStyle,
+        boldStyle: boldStyle,
+      ),
           ],
         ),
       ),
@@ -524,24 +631,55 @@ class OfferLetterPdfService {
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Text(content.terminationPoint1, style: bodyStyle),
-            pw.SizedBox(height: 4),
-            pw.Text(content.terminationPoint2, style: bodyStyle),
-            pw.SizedBox(height: 4),
-            pw.Text(content.terminationPoint3, style: bodyStyle),
-            pw.SizedBox(height: 4),
-            pw.Text(content.terminationPoint4, style: bodyStyle),
+            hangingNumberPoint(
+        number: "1",
+        text: content.terminationPoint1,
+        bodyStyle: bodyStyle,
+      ),
+      pw.SizedBox(height: 6),
+
+      hangingNumberPoint(
+        number: "2",
+        text: content.terminationPoint2,
+        bodyStyle: bodyStyle,
+      ),
+      pw.SizedBox(height: 6),
+
+      hangingNumberPoint(
+        number: "3",
+        text: content.terminationPoint3,
+        bodyStyle: bodyStyle,
+      ),
+      pw.SizedBox(height: 6),
+
+      hangingNumberPoint(
+        number: "4",
+        text: content.terminationPoint4,
+        bodyStyle: bodyStyle,
+      ),
+      pw.SizedBox(height: 6),
+
+      hangingNumberPoint(
+        number: "5",
+        text: content.terminationPoint5,
+        bodyStyle: bodyStyle,
+      ),
+      pw.SizedBox(height: 6),
+
+      hangingNumberPoint(
+        number: "6",
+        text: content.terminationPoint6,
+        bodyStyle: bodyStyle,
+      ),
+      pw.SizedBox(height: 6),
+
+      hangingNumberPoint(
+        number: "7",
+        text: content.terminationPoint7,
+        bodyStyle: bodyStyle,
+      ),
           ],
         ),
-      ),
-
-      pw.SizedBox(height: 12),
-      pw.Text("Pre Employment Screening", style: headingStyle),
-      pw.SizedBox(height: 6),
-      pw.Paragraph(
-        text: content.preEmploymentScreeningBody,
-        style: bodyStyle,
-        textAlign: pw.TextAlign.justify,
       ),
 
       pw.Spacer(),
@@ -551,6 +689,16 @@ class OfferLetterPdfService {
 
     // ---------------- PAGE 4 ----------------
     final page4 = <pw.Widget>[
+      // Pre Employment Screening
+      pw.Text("Pre Employment Screening", style: headingStyle),
+      pw.SizedBox(height: 6),
+      pw.Paragraph(
+        text: content.preEmploymentScreeningBody,
+        style: bodyStyle,
+        textAlign: pw.TextAlign.justify,
+      ),
+
+      pw.SizedBox(height: 12),
       pw.Text("Dispute", style: headingStyle),
       pw.SizedBox(height: 6),
       pw.Paragraph(
@@ -575,87 +723,77 @@ class OfferLetterPdfService {
         textAlign: pw.TextAlign.justify,
       ),
 
-      // push the signature row down towards the footer image
-      pw.Spacer(),
-      // signature / acceptance row — aligned to the bottom
+      // Use a fixed sized gap so signature doesn't sit flush on the footer
+      pw.SizedBox(height: 100), // <-- tune this value to adjust final spacing
+
+      // signature / acceptance row — aligned to the bottom of this section (but above the footer)
       pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         crossAxisAlignment: pw.CrossAxisAlignment.end,
         children: [
-          // Left block (HR) - left aligned
-          // LEFT BLOCK (HR) — keep signature size, move underline up with a Stack
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              mainAxisSize: pw.MainAxisSize.min,
-              children: [
-                pw.Text("For ZeAI Soft,", style: boldStyle),
-                pw.SizedBox(height: 6),
+          // Left block (HR)
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            mainAxisSize: pw.MainAxisSize.min,
+            children: [
+              pw.Text("For ZeAI Soft,", style: boldStyle),
+              pw.SizedBox(height: 6),
 
-                // Container holds the signature and the underline (stacked)
-                pw.Container(
-                  height: 100, // signatureHeight (90) + a bit of room
-                  width: 280,  // signatureWidth
-                  child: pw.Stack(
-                    children: [
-                      // signature at top-left (keeps original visual size)
-                      if (signatureImage != null)
-                        pw.Positioned(
-                          left: 0,
-                          top: 0,
-                          child: pw.Image(
-                            signatureImage,
-                            width: 280, // same as Container width (or slightly less)
-                            height: 90, // signatureHeight — preserve the size you want
-                            fit: pw.BoxFit.contain,
-                          ),
-                        )
-                      else
-                        pw.Positioned(
-                          left: 0,
-                          top: 0,
-                          child: pw.SizedBox(height: 90, width: 280),
-                        ),
-
-                      // underline positioned to overlap the bottom of the signature
-                      // (signatureHeight - overlapGap) -> 90 - 22 = 68
+              pw.Container(
+                height: 90,
+                width: 280,
+                child: pw.Stack(
+                  children: [
+                    if (signatureImage != null)
                       pw.Positioned(
                         left: 0,
-                        top: 68, // adjust this number to tune gap (smaller => tighter)
-                        child: pw.Text("__________________", style: boldStyle),
+                        top: 0,
+                        child: pw.Image(
+                          signatureImage,
+                          width: 280,
+                          height: 90,
+                          fit: pw.BoxFit.contain,
+                        ),
+                      )
+                    else
+                      pw.Positioned(
+                        left: 0,
+                        top: 0,
+                        child: pw.SizedBox(height: 90, width: 280),
                       ),
-                    ],
-                  ),
+
+                    pw.Positioned(
+                      left: 0,
+                      top: 68,
+                      child: pw.Text("__________________", style: boldStyle),
+                    ),
+                  ],
                 ),
+              ),
 
-                // small gap to name (reduce if you want name to move up)
-                pw.SizedBox(height: 2),
-                pw.Text("Hari Baskaran", style: boldStyle),
-                pw.Text(
-                  "Co-Founder & Chief Technology Officer",
-                  style: smallItalicStyle,
-                ),
-              ],
-            ),
+              pw.SizedBox(height: 2),
+              pw.Text("Hari Baskaran", style: boldStyle),
+              pw.Text(
+                "Co-Founder & Chief Technology Officer",
+                style: smallItalicStyle,
+              ),
+            ],
+          ),
 
-          // --------------------------------------------------------
-
-
-          // Right block (Candidate) - RIGHT aligned
+          // Candidate block
           pw.Column(
-            crossAxisAlignment:
-                pw.CrossAxisAlignment.end, // <-- align children to right
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
             mainAxisSize: pw.MainAxisSize.min,
             children: [
               pw.Text("To ZeAI Soft,", style: boldStyle),
-              pw.SizedBox(height: 68),
+              pw.SizedBox(height: 70),
               pw.Text("___________________", style: boldStyle),
-              pw.SizedBox(height: 6),
+              pw.SizedBox(height: 14),
               pw.Text(
                 fullName,
                 style: boldStyle,
                 textAlign: pw.TextAlign.right,
               ),
-              // candidate position in italic and right-aligned
               pw.Text(
                 position,
                 style: smallItalicStyle,
@@ -666,10 +804,7 @@ class OfferLetterPdfService {
         ],
       ),
 
-      // small gap between signature row and bottom of content area (optional)
       pw.SizedBox(height: 11),
-
-      pw.Spacer(),
     ];
 
     pdf.addPage(buildTemplatePage(page4));

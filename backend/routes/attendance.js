@@ -1,6 +1,20 @@
+//backend/routes/attendance.js
 const express = require("express");
 const Attendance = require("../models/attendance");
 const router = express.Router();
+
+
+function timeToMinutes(timeStr) {
+  if (!timeStr) return 0;
+
+  const [time, modifier] = timeStr.split(" ");
+  let [hours, minutes] = time.split(":").map(Number);
+
+  if (modifier === "PM" && hours !== 12) hours += 12;
+  if (modifier === "AM" && hours === 12) hours = 0;
+
+  return hours * 60 + minutes;
+}
 
 // 🔹 Utility: Always return DD-MM-YYYY
 function formatDateToDDMMYYYY(dateInput) {
@@ -60,6 +74,7 @@ router.post("/attendance/mark/:employeeId", async (req, res) => {
       loginReason,
       logoutReason,
       status: status || "Login",
+      attendanceType: "P", // ✅ FIX HERE
     });
 
     await newAttendance.save();
@@ -71,7 +86,8 @@ router.post("/attendance/mark/:employeeId", async (req, res) => {
   }
 });
 
-// ✅ PUT: Update attendance (Logout / BreakIn / BreakOff)
+// --- replace current PUT /attendance/update/:employeeId handler with this ---
+
 router.put("/attendance/update/:employeeId", async (req, res) => {
   const { employeeId } = req.params;
   let { date, logoutTime, breakTime, breakStatus, loginReason, logoutReason, status } = req.body;
@@ -81,29 +97,36 @@ router.put("/attendance/update/:employeeId", async (req, res) => {
     const todayRecord = await Attendance.findOne({ employeeId, date });
     if (!todayRecord) return res.status(404).json({ message: "❌ Attendance not found" });
 
-    // Initialize fields if missing
     if (!todayRecord.breakTime) todayRecord.breakTime = "-";
 
-    // --- ✅ BreakIn: Start break, check total time before allowing ---
+    // server formatted time "hh:mm:ss AM/PM"
+    const serverNowFormatted = () => {
+      return new Date().toLocaleTimeString('en-US', {
+        hour12: true,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    };
+
+    const computeStoredTotal = (breakTimeStr) => {
+      let total = 0;
+      if (!breakTimeStr || breakTimeStr === "-") return 0;
+      const segments = breakTimeStr.split(",");
+      for (let seg of segments) {
+        const match = seg.match(/\((\d+)\s*mins\)/);
+        if (match) total += parseInt(match[1]);
+      }
+      return total;
+    };
+
+    // --- BreakIn: Start break (do NOT block when total >= 60) ---
     if (breakStatus === "BreakIn") {
-      let totalMinutes = 0;
-      if (todayRecord.breakTime && todayRecord.breakTime !== "-") {
-        const breakSegments = todayRecord.breakTime.split(",");
-        for (let seg of breakSegments) {
-          const match = seg.match(/\((\d+)\s*mins\)/);
-          if (match) totalMinutes += parseInt(match[1]);
-        }
-      }
+      let totalMinutes = computeStoredTotal(todayRecord.breakTime);
 
-      if (totalMinutes >= 60) {
-        return res.status(400).json({
-          message: "⚠ You have already reached the 60-minute break limit.",
-          totalMinutes,
-          limitReached: true,
-        });
-      }
-
-      todayRecord.breakInProgress = breakTime;
+      // Use server timestamp to start break
+      const serverStart = serverNowFormatted();
+      todayRecord.breakInProgress = serverStart;
       todayRecord.status = "Break";
       await todayRecord.save();
 
@@ -111,77 +134,101 @@ router.put("/attendance/update/:employeeId", async (req, res) => {
         message: "⏸ Break started",
         breakInProgress: todayRecord.breakInProgress,
         totalMinutes,
+        // limitReached is only informational now, not an error block
+        limitReached: totalMinutes >= 60
       });
     }
 
-   // --- ✅ BreakOff: finalize break and calculate total ---
-if (breakStatus === "BreakOff" && todayRecord.breakInProgress) {
-  const breakStart = todayRecord.breakInProgress;
-  const breakEnd = breakTime; // current time
+    // --- BreakOff: finalize break and calculate total (allow totals > 60) ---
+    if (breakStatus === "BreakOff" && todayRecord.breakInProgress) {
+      const breakStart = todayRecord.breakInProgress;
+      const breakEnd = serverNowFormatted(); // server-determined end time
 
-  let breakArray = [];
-  if (todayRecord.breakTime && todayRecord.breakTime !== "-") {
-    breakArray = todayRecord.breakTime
-      .split(",")
-      .map((b) => b.trim().split(" (")[0]); // remove previous durations
-  }
-
-  breakArray.push(`${breakStart} to ${breakEnd}`);
-  todayRecord.breakInProgress = null;
-
-  // --- Helper: Convert time string to minutes since midnight ---
-  const parseTime = (timeStr) => {
-    const [time, modifier] = timeStr.split(" ");
-    let [hours, minutes] = time.split(":").map(Number);
-    if (modifier === "PM" && hours !== 12) hours += 12;
-    if (modifier === "AM" && hours === 12) hours = 0;
-    return hours * 60 + minutes;
-  };
-
-  // --- Calculate durations and enforce 60-min limit ---
-  let totalMinutes = 0;
-  const formattedBreaks = [];
-
-  for (const segment of breakArray) {
-    const [start, end] = segment.split("to").map((t) => t.trim());
-    const diff = Math.max(parseTime(end) - parseTime(start), 0);
-
-    // ✅ If adding this segment exceeds 60 mins, only take remaining minutes
-    if (totalMinutes + diff > 60) {
-      const remaining = 60 - totalMinutes;
-      if (remaining > 0) {
-        formattedBreaks.push(`${start} to ${end} (${remaining} mins)`);
-        totalMinutes = 60;
+      let breakArray = [];
+      if (todayRecord.breakTime && todayRecord.breakTime !== "-") {
+        breakArray = todayRecord.breakTime
+          .split(",")
+          .map((b) => b.trim().split(" (")[0]); // existing stored ranges (without durations)
       }
-      // ✅ Stop adding further breaks once 60 mins reached
-      break;
-    } else {
-      formattedBreaks.push(`${start} to ${end} (${diff} mins)`);
-      totalMinutes += diff;
+
+      breakArray.push(`${breakStart} to ${breakEnd}`);
+      todayRecord.breakInProgress = null;
+
+      // parse "hh:mm:ss AM/PM" to minutes since midnight
+      const parseTime = (timeStr) => {
+        if (!timeStr) return 0;
+        const [time, modifier] = timeStr.split(" ");
+        const timeParts = time.split(":").map(Number);
+        let hours = timeParts[0] || 0;
+        let minutes = timeParts[1] || 0;
+        // ignore seconds for calculation simplicity
+        if (modifier === "PM" && hours !== 12) hours += 12;
+        if (modifier === "AM" && hours === 12) hours = 0;
+        return hours * 60 + minutes;
+      };
+
+      let totalMinutes = 0;
+      const formattedBreaks = [];
+
+      for (const segment of breakArray) {
+        const [start, end] = segment.split("to").map((t) => t.trim());
+        let startMin = parseTime(start);
+        let endMin = parseTime(end);
+        let diff = endMin - startMin;
+
+        // handle cross-midnight
+        if (diff < 0) diff += 24 * 60;
+        diff = Math.max(diff, 0);
+
+        // here we **do not** truncate segment to fit 60; we store full segment
+        formattedBreaks.push(`${start} to ${end} (${diff} mins)`);
+        totalMinutes += diff;
+      }
+
+      // store full total (may exceed 60)
+      todayRecord.breakTime = formattedBreaks.join(", ") + ` (Total: ${totalMinutes} mins)`;
+      todayRecord.status = "Login";
+      await todayRecord.save();
+
+      const limitReached = totalMinutes >= 60;
+      const overtimeMinutes = Math.max(0, totalMinutes - 60);
+
+      return res.status(200).json({
+        message: limitReached
+          ? "⚠ Total break time has reached/exceeded 60 minutes (overtime recorded)."
+          : "▶ Break ended successfully",
+        totalMinutes,
+        overtimeMinutes,
+        limitReached,
+        breakTime: todayRecord.breakTime,
+      });
     }
-  }
 
-  // ✅ Always store with total duration at the end
-  todayRecord.breakTime =
-    formattedBreaks.join(", ") + ` (Total: ${totalMinutes} mins)`;
-  todayRecord.status = "Login";
-  await todayRecord.save();
+    // --- Logout / normal update ---
+    if (logoutTime && todayRecord.loginTime) {
+      const loginMinutes = timeToMinutes(todayRecord.loginTime);
+      const logoutMinutes = timeToMinutes(logoutTime);
 
-  const limitReached = totalMinutes >= 60;
+      let workedMinutes = logoutMinutes - loginMinutes;
 
-  return res.status(limitReached ? 400 : 200).json({
-    message: limitReached
-      ? "⚠ Total break time reached 60 minutes. No more breaks allowed."
-      : "▶ Break ended successfully",
-    totalMinutes,
-    limitReached,
-    breakTime: todayRecord.breakTime,
-  });
-}
+      // subtract break minutes (will include overtime if present)
+      let breakMinutes = 0;
+      if (todayRecord.breakTime) {
+        const match = todayRecord.breakTime.match(/Total:\s*(\d+)\s*mins/);
+        if (match) breakMinutes = parseInt(match[1]);
+      }
 
+      workedMinutes = Math.max(workedMinutes - breakMinutes, 0);
+      todayRecord.workingMinutes = workedMinutes;
 
-    // --- ✅ Normal logout update ---
-    if (logoutTime) {
+      if (workedMinutes >= 480) {
+        todayRecord.attendanceType = "P";
+      } else if (workedMinutes >= 240) {
+        todayRecord.attendanceType = "HL";
+      } else {
+        todayRecord.attendanceType = "A";
+      }
+
       todayRecord.logoutTime = logoutTime;
       todayRecord.status = "Logout";
       todayRecord.breakInProgress = null;
@@ -197,8 +244,6 @@ if (breakStatus === "BreakOff" && todayRecord.breakInProgress) {
     res.status(500).json({ message: "Server Error" });
   }
 });
-
-
 
 // ✅ GET: Last 5 records
 router.get("/attendance/history/:employeeId", async (req, res) => {
@@ -241,5 +286,34 @@ router.get("/attendance/status/:employeeId", async (req, res) => {
   }
 });
 
+
+// ✅ GET: Attendance by month (for Attendance List screen)
+// GET: Attendance by month (FINAL)
+router.get("/attendance/month", async (req, res) => {
+  try {
+    const { year, month } = req.query; // month: 1-12
+    if (!year || !month) {
+      return res.status(400).json({ message: "Year and month required" });
+    }
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    const dateList = Array.from({ length: daysInMonth }, (_, i) => {
+      const d = new Date(year, month - 1, i + 1);
+      return `${String(d.getDate()).padStart(2, "0")}-${String(
+        d.getMonth() + 1
+      ).padStart(2, "0")}-${d.getFullYear()}`;
+    });
+
+    const attendance = await Attendance.find({
+      date: { $in: dateList },
+    });
+
+    res.json(attendance);
+  } catch (err) {
+    console.error("❌ Monthly attendance error:", err);
+    res.status(500).json({ message: "Server Error" });
+  }
+});
 
 module.exports = router;

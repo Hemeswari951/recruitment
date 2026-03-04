@@ -377,8 +377,7 @@ class _OnCampusPageState extends State<OnCampusPage> {
                     }
 
                     final payload = <String, dynamic>{
-                      //'dateOfRecruitment': chosenDate!.toIso8601String(),
-                      'dateOfRecruitment': _dateFmt.format(chosenDate!),
+                      'dateOfRecruitment': chosenDate!.toIso8601String(),
                       'collegeName': collegeController.text.trim(),
                       'totalStudents': parseOrZero(
                         totalStudentsController.text,
@@ -527,36 +526,36 @@ class _OnCampusPageState extends State<OnCampusPage> {
                     ),
                     child: const Text('Refresh'),
                   ),
-                  const SizedBox(width: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: const Text('Menu'),
-                          content: const Text('Menu options (add your items)'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Close'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(50),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                    ),
-                    child: const Text('Menu'),
-                  ),
+                  // const SizedBox(width: 12),
+                  // ElevatedButton(
+                  //   onPressed: () {
+                  //     showDialog(
+                  //       context: context,
+                  //       builder: (_) => AlertDialog(
+                  //         title: const Text('Menu'),
+                  //         content: const Text('Menu options (add your items)'),
+                  //         actions: [
+                  //           TextButton(
+                  //             onPressed: () => Navigator.pop(context),
+                  //             child: const Text('Close'),
+                  //           ),
+                  //         ],
+                  //       ),
+                  //     );
+                  //   },
+                  //   style: ElevatedButton.styleFrom(
+                  //     backgroundColor: Colors.white,
+                  //     foregroundColor: Colors.black,
+                  //     shape: RoundedRectangleBorder(
+                  //       borderRadius: BorderRadius.circular(50),
+                  //     ),
+                  //     padding: const EdgeInsets.symmetric(
+                  //       horizontal: 16,
+                  //       vertical: 12,
+                  //     ),
+                  //   ),
+                  //   child: const Text('Menu'),
+                  // ),
                 ],
               ),
             ),
@@ -787,11 +786,16 @@ class _DrivesTableState extends State<_DrivesTable> {
             IconButton(
               icon: const Icon(Icons.remove_red_eye, color: Colors.green),
               onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => StudentDetailsPage(driveId: id),
-                ),
-              ),
+  context,
+  MaterialPageRoute(
+    builder: (_) => StudentDetailsPage(
+      key: ValueKey(id), // 🔥 THIS LINE FIXES THE BUG
+      driveId: id,
+       isOffCampus: false,
+    ),
+  ),
+),
+
             ),
           ),
           DataCell(
@@ -823,7 +827,7 @@ class _DrivesTableState extends State<_DrivesTable> {
       );
     }).toList();
 
-    return Scrollbar(
+     return Scrollbar(
       controller: _hController,
       thumbVisibility: true,
       scrollbarOrientation: ScrollbarOrientation.bottom,
@@ -840,31 +844,35 @@ class _DrivesTableState extends State<_DrivesTable> {
               constraints: BoxConstraints(
                 minWidth: MediaQuery.of(context).size.width,
               ),
-              child: DataTable(
-                columnSpacing: 16,
-                horizontalMargin: 12,
-                headingRowColor: WidgetStateProperty.resolveWith(
-                  (states) => Colors.grey.shade200,
-                ),
-                columns: const [
-                  DataColumn(label: Text('Date')),
-                  DataColumn(label: Text('College Name')),
-                  DataColumn(label: Text('Total Students')),
-                  DataColumn(label: Text('Aptitude Selected')),
-                  DataColumn(label: Text('Tech Selected')),
-                  DataColumn(label: Text('HR Selected')),
-                  DataColumn(label: Text('BG Verification')),
-                  DataColumn(label: Text('Selected Position')),
-                  DataColumn(label: Text('Contact Person')),
-                  DataColumn(label: Text('Students')),
-                  DataColumn(label: Text('Actions')),
-                ],
-                rows: rows,
-              ),
+          child: DataTable(
+            columnSpacing: 16,
+            horizontalMargin: 12,
+            headingRowColor: WidgetStateProperty.resolveWith(
+              (states) => Colors.grey.shade200,
             ),
+            columns: const [
+              DataColumn(label: Text('Date')),
+              DataColumn(label: Text('College Name')),
+              DataColumn(label: Text('Total Students')),
+              DataColumn(label: Text('Aptitude Selected')),
+              DataColumn(label: Text('Tech Selected')),
+              DataColumn(label: Text('HR Selected')),
+              DataColumn(label: Text('BG Verification')),
+              DataColumn(label: Text('Selected Position')),
+              DataColumn(label: Text('Contact Person')),
+              DataColumn(label: Text('Students')),
+              DataColumn(label: Text('Actions')),
+            ],
+            rows: rows,
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
+
   }
+  
+
+
 }

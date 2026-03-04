@@ -1,8 +1,9 @@
+//superadmin_performance.dart
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-import 'admin_notification.dart';
+import 'superadmin_notification.dart';
 import 'user_provider.dart';
 import 'package:provider/provider.dart';
 import 'sidebar.dart';
@@ -37,7 +38,7 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
   TextEditingController technicalKnowledgeController = TextEditingController();
   TextEditingController businessKnowledgeController = TextEditingController();
 
-  final bool _isloading = false;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -54,7 +55,7 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
 
       final response = await http.get(
         Uri.parse(
-          'http://localhost:5000/api/employees/for-review/$reviewerPosition',
+          'https://company-04bz.onrender.com/api/employees/for-review/$reviewerPosition',
         ),
       );
 
@@ -106,7 +107,9 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
       return;
     }
 
-    final url = Uri.parse('http://localhost:5000/reviews');
+    final url = Uri.parse('https://company-04bz.onrender.com/reviews');
+    final now = DateTime.now(); // 🔹 Get current date
+    final int currentYear = now.year; // 🔹 Extract year (e.g., 2026)
     final reviewerName =
         Provider.of<UserProvider>(context, listen: false).employeeName ??
         'Admin';
@@ -138,7 +141,7 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
         );
 
         // 🔔 Create notifications
-        final notifUrl = Uri.parse("http://localhost:5000/notifications");
+        final notifUrl = Uri.parse("https://company-04bz.onrender.com/notifications");
         String currentMonth = getCurrentMonth();
         final userProvider = Provider.of<UserProvider>(context, listen: false);
         final adminName = userProvider.employeeName ?? 'Super Admin';
@@ -146,13 +149,20 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
         // 1️⃣ Employee notification
         final employeeNotif = {
           "month": currentMonth,
+          "year": currentYear, // ✅ ADD THIS LINE
           "category": "performance",
-          // "message": "Performance review for $selectedEmpName ($selectedEmpId) - $currentMonth",
-          "message": "Performance received from ($adminName) - $currentMonth",
-          "empId": selectedEmpId,
+          "message": "Performance review received from ($adminName) - $currentMonth",
+          "empId": selectedEmpId, 
+          "receiverId": selectedEmpId,
+          "empName": selectedEmpName,
           "senderName": adminName,
           "senderId": widget.currentUserId,
           "flag": selectedFlag,
+          "communication": communicationController.text,
+          "attitude": attitudeController.text,
+          "technicalKnowledge": technicalKnowledgeController.text,
+          "business": businessKnowledgeController.text,
+    
         };
         await http.post(
           notifUrl,
@@ -163,13 +173,19 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
         // 2️⃣ Admin self-copy
         final adminNotif = {
           "month": currentMonth,
+          "year": currentYear, // ✅ ADD THIS LINE
           "category": "performance",
-          // "message": "You reviewed $selectedEmpName ($selectedEmpId) - $currentMonth",
           "message": "Performance sent to ($selectedEmpName) - $currentMonth",
-          "empId": widget.currentUserId, // ✅ logged-in admin’s own ID
+          "empId": widget.currentUserId, 
+          "receiverId": selectedEmpId,
           "senderName": adminName,
           "senderId": widget.currentUserId,
           "flag": selectedFlag,
+          "communication": communicationController.text,
+          "attitude": attitudeController.text,
+          "technicalKnowledge": technicalKnowledgeController.text,
+          "business": businessKnowledgeController.text,
+          "empName": selectedEmpName,
         };
         await http.post(
           notifUrl,
@@ -188,13 +204,13 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
           selectedFlag = "Green Flag";
         });
 
-        // ✅ Navigate to Notification screen
+        // Update the navigation block at the end of submitReview
         Future.delayed(const Duration(milliseconds: 300), () {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
               builder: (context) =>
-                  AdminNotificationsPage(empId: widget.currentUserId),
+                  SuperadminNotificationsPage(empId: widget.currentUserId), // 👈 Updated class name
             ),
           );
         });
@@ -385,7 +401,7 @@ class _SuperadminPerformancePageState extends State<SuperadminPerformancePage> {
         ),
         const SizedBox(width: 20),
         ElevatedButton.icon(
-          onPressed: _isloading ? null : submitReview,
+          onPressed: _isLoading ? null : submitReview,
           icon: const Icon(Icons.send),
           label: const Text("Send"),
         ),

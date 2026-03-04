@@ -34,10 +34,16 @@ class PdfContentModel {
   String terminationPoint2;
   String terminationPoint3;
   String terminationPoint4;
+  // Newly added termination points (5,6,7)
+  String terminationPoint5;
+  String terminationPoint6;
+  String terminationPoint7;
+
+  // Page 4
+  // Moved Pre Employment Screening from Page 3 to Page 4
   String preEmploymentScreeningTitle;
   String preEmploymentScreeningBody;
 
-  // Page 4
   String disputeTitle;
   String disputeBody;
   String declarationTitle;
@@ -53,8 +59,9 @@ class PdfContentModel {
     this.positionBody =
         "      We are pleased to offer you the position of {position} at ZeAI Soft, starting on {doj}. In this role, you will report directly to the Team Lead (TL), who will provide guidance and support. You will be responsible for contributing to our operational initiatives during your training period. This role offers hands-on experience in software development, coding, debugging, and testing. You will also assist with live projects under the supervision of senior team members. Additionally, you will gain exposure to various technologies, tools, and processes. Your performance will be reviewed regularly throughout the training period. At the end of the program, you will be evaluated for a suitable permanent position. Compensation after training will be based on your performance.",
     this.compensationTitle = "Compensation",
+    // <-- replaced hardcoded "November 2025" with placeholder {salaryFrom}
     this.compensationBody =
-        "      You will be undergoing an internship with ZeAI Soft for a period of 6 months and your monthly stipend will be Rs. {stipend}/-. You will receive your salary payment from November 2025. After successful completion of your training period, your salary will be revised to {ctc} based on your performance.",
+        "       You will be undergoing an internship with  ZeAI Soft for a period of 6 months and your monthly stipend will be  {stipend}. You will receive your salary payment from  {salaryFrom}. After successful completion of your training period, your salary will be revised to {ctc} based on your performance.",
     this.confidentialityTitle = "Confidentiality and Non Disclosure",
     this.confidentialityBody =
         "      You are expected to uphold the highest standards of confidentiality concerning the company's operations. This includes safeguarding all information, documents, instruments, and any materials related to the company that you encounter during your assessment period. Additionally, you must refrain from disclosing any confidential information in accordance with the \"Non-Disclosure and Confidentiality Policy.\"",
@@ -94,18 +101,27 @@ class PdfContentModel {
         "This includes communication about your remuneration or employment terms, which should only be discussed with your immediate superior. Failure to adhere to these standards will lead to immediate termination and potential legal action.",
     this.terminationAndRecoveryTitle = "Termination and Recovery",
     this.terminationPoint1 =
-        "1. The Company reserves the right to terminate this contract and the Employee's employment at any time.",
+        "The Company reserves the right to terminate this contract and the Employee's employment at any time.",
     this.terminationPoint2 =
-        "2. Upon termination, the Employee must promptly return all company assets and property, including documents, files, memos, and any other materials in their possession or control.",
+        "Upon termination, the Employee must promptly return all company assets and property, including documents, files, memos, and any other materials in their possession or control.",
     this.terminationPoint3 =
-        "3. Any electronic devices containing conversations or details that violate company policy will be subject to confiscation for legal proceedings.",
+        "Any electronic devices containing conversations or details that violate company policy will be subject to confiscation for legal proceedings.",
     this.terminationPoint4 =
-        "4. The Employee agrees not to pursue any other employment while under this contract and commits to obtaining prior consent from the Company before accepting any outside employment.",
+        "The Employee agrees not to pursue any other employment while under this contract and commits to obtaining prior consent from the Company before accepting any outside employment.",
+    // New points added after the 4th point as requested
+    this.terminationPoint5 =
+        "In the event the Employee resigns or discontinues employment during the training/internship period, the Employee shall be liable to reimburse the Company for the cost of training, which includes resources, mentoring, and administrative expenses incurred by the Company during the training program.",
+    this.terminationPoint6 =
+        "Employees must maintain strict confidentiality and professionalism, and are prohibited from discussing or sharing any company-related information on personal or unofficial platforms. Any unauthorized communication, gossip, or actions that harm the company’s reputation will result in disciplinary action.",
+    this.terminationPoint7 =
+        "Employees are strictly prohibited from creating or maintaining any informal groups or communication channels without the knowledge and approval of the upper management. All official groups must be formed only with organizational consent, and any unauthorized group activity, discussion, or misconduct within such platforms will result in immediate disciplinary action as per company policy.",
+
+    // Page 4
+    // Moved Pre Employment Screening here
     this.preEmploymentScreeningTitle = "Pre Employment Screening",
     this.preEmploymentScreeningBody =
         "      This employment offer is contingent upon the successful completion of pre-employment screening activities, which may include background checks, reference checks of previous employment, and any other assessments deemed appropriate by the company. Please note that the company's policy states that any misrepresentation of qualifications, credentials, or other relevant information during the hiring process may result in immediate dismissal.",
 
-    // Page 4
     this.disputeTitle = "Dispute",
     this.disputeBody =
         "      Dispute Any dispute that arises between parties will be subjected to exclusive jurisdiction of courts in Chennai alone.",
@@ -149,6 +165,10 @@ class PdfContentModel {
       terminationPoint2: json['terminationPoint2'],
       terminationPoint3: json['terminationPoint3'],
       terminationPoint4: json['terminationPoint4'],
+      // New termination points
+      terminationPoint5: json['terminationPoint5'],
+      terminationPoint6: json['terminationPoint6'],
+      terminationPoint7: json['terminationPoint7'],
       preEmploymentScreeningTitle: json['preEmploymentScreeningTitle'],
       preEmploymentScreeningBody: json['preEmploymentScreeningBody'],
       disputeTitle: json['disputeTitle'],
@@ -192,6 +212,10 @@ class PdfContentModel {
       'terminationPoint2': terminationPoint2,
       'terminationPoint3': terminationPoint3,
       'terminationPoint4': terminationPoint4,
+      // New termination points
+      'terminationPoint5': terminationPoint5,
+      'terminationPoint6': terminationPoint6,
+      'terminationPoint7': terminationPoint7,
       'preEmploymentScreeningTitle': preEmploymentScreeningTitle,
       'preEmploymentScreeningBody': preEmploymentScreeningBody,
       'disputeTitle': disputeTitle,

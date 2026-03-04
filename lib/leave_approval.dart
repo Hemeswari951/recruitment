@@ -1,3 +1,4 @@
+// leave_approval.dart
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -16,242 +17,147 @@ class LeaveApprovalPage extends StatefulWidget {
 }
 
 class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
-  final String apiUrl = "http://localhost:5000/apply";
+  final String apiUrl = "https://company-04bz.onrender.com/apply";
 
-  List<dynamic> leaveRequests = [];
-  List<dynamic> filteredLeaves = [];
+  final ValueNotifier<List<dynamic>> filteredLeavesNotifier = ValueNotifier([]);
+  String selectedFilter = "Pending";
+  List<dynamic> allLeaves = [];
 
-  String selectedFilter = "All"; // Default filter
-  DateTimeRange? customRange;
+  // DOMAIN RELATED
+  String selectedDomain = "All";
+  List<String> domains = ["All"];
+
+  // EMPLOYEE RELATED
+  List<dynamic> allEmployees = [];
+  String? selectedEmployeeId;
+
+  final TextEditingController _searchController = TextEditingController();
+  String searchQuery = "";
+
+  final ScrollController _scrollController = ScrollController();
+  final Set<String> _expandedReasons = {};
 
   DateTime fromDate = DateTime.now().subtract(const Duration(days: 7));
   DateTime toDate = DateTime.now();
-
-  final DateFormat _formatter = DateFormat('yyyy-MM-dd'); // ✅ safe format
-
-  // ✅ Helper for displaying dates from API
-  String _formatDate(String? rawDate) {
-    if (rawDate == null || rawDate.isEmpty) return '';
-    try {
-      final DateTime parsedDate = DateTime.parse(rawDate).toLocal(); // keep IST
-      return DateFormat('dd-MM-yyyy').format(parsedDate);
-    } catch (e) {
-      return rawDate;
-    }
-  }
-
-  // ✅ Fetch leaves (employee → own, admin/founder → all)
-  Future<void> fetchAllLeaves() async {
-    try {
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      final employeeId = userProvider.employeeId ?? "";
-
-      if (employeeId.isEmpty) {
-        print("❌ Employee ID is missing, cannot fetch leaves.");
-        return;
-      }
-
-      String url = "$apiUrl/leave-approvals/$employeeId";
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          leaveRequests = data["items"];
-          filteredLeaves = data["items"];
-        });
-      }
-    } catch (e) {
-      print("❌ Error fetching leave requests: $e");
-    }
-  }
-
-  // ✅ Apply Filter
-  Future<void> applyFilter() async {
-    try {
-      String url = "$apiUrl/filter";
-
-      String? startDate;
-      String? endDate;
-      final fmt = DateFormat('yyyy-MM-dd');
-
-      if (selectedFilter == "Last 7 Days") {
-        final now = DateTime.now();
-        final start = now.subtract(const Duration(days: 6));
-        startDate = fmt.format(start);
-        endDate = fmt.format(now);
-      } else if (selectedFilter == "Last 30 Days") {
-        final now = DateTime.now();
-        final start = now.subtract(const Duration(days: 29));
-        startDate = fmt.format(start);
-        endDate = fmt.format(now);
-      } else if (selectedFilter == "Custom Range" && customRange != null) {
-        startDate = fmt.format(customRange!.start);
-        endDate = fmt.format(customRange!.end);
-      }
-
-      final userProvider = Provider.of<UserProvider>(context, listen: false);
-      final role = userProvider.position?.toLowerCase() ?? "";
-      final employeeId = userProvider.employeeId ?? "";
-
-      // ✅ Map filter → status
-      String status;
-      if (selectedFilter == "All") {
-        status = "All"; // backend will return only Approved & Rejected
-      } else if (selectedFilter == "Last 7 Days" ||
-          selectedFilter == "Last 30 Days" ||
-          selectedFilter == "Custom Range") {
-        status = "All"; // still want Approved & Rejected only
-      } else {
-        status = selectedFilter; // "Approved", "Rejected", etc.
-      }
-
-      // employee → filter by id
-      if (role != "admin" && role != "founder") {
-        if (startDate != null && endDate != null) {
-          url +=
-              "?employeeId=$employeeId&fromDate=$startDate&toDate=$endDate&status=$status";
-        } else {
-          url += "?employeeId=$employeeId&status=$status";
-        }
-      } else {
-        // admin/founder → role based
-        if (startDate != null && endDate != null) {
-          url +=
-              "?role=$role&employeeId=$employeeId&fromDate=$startDate&toDate=$endDate&status=$status";
-        } else {
-          url += "?role=$role&employeeId=$employeeId&status=$status";
-        }
-      }
-
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          filteredLeaves = data["items"];
-        });
-      }
-    } catch (e) {
-      print("❌ Error applying filter: $e");
-    }
-  }
-
-  // ✅ Pick Custom Range
-  Future<void> _pickDateRange(BuildContext context) async {
-    DateTime tempFrom = fromDate;
-    DateTime tempTo = toDate;
-
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          contentPadding: const EdgeInsets.all(16),
-          content: StatefulBuilder(
-            builder: (context, setModalState) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    "Select Custom Date Range",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // From Date
-                  TextField(
-                    readOnly: true,
-                    decoration: InputDecoration(
-                      labelText: "From Date",
-                      suffixIcon: const Icon(Icons.calendar_today),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    controller: TextEditingController(
-                      text: _formatter.format(tempFrom),
-                    ),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: tempFrom,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setModalState(() => tempFrom = picked);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  // To Date
-                  TextField(
-                    readOnly: true,
-                    decoration: InputDecoration(
-                      labelText: "To Date",
-                      suffixIcon: const Icon(Icons.calendar_today),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    controller: TextEditingController(
-                      text: _formatter.format(tempTo),
-                    ),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: tempTo,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setModalState(() => tempTo = picked);
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Action Button
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepPurple,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      setState(() {
-                        fromDate = tempFrom;
-                        toDate = tempTo;
-                        customRange = DateTimeRange(
-                          start: fromDate,
-                          end: toDate,
-                        );
-                        selectedFilter = "Custom Range";
-                      });
-                      applyFilter();
-                    },
-                    child: const Text("Apply Filter"),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
+  DateTimeRange? customRange;
+  final DateFormat _formatter = DateFormat('yyyy-MM-dd');
 
   @override
   void initState() {
     super.initState();
-    fetchAllLeaves();
+    fetchEmployees().then((_) => _setupDomainsForEmployee());
+  }
+
+  /// Fetch all employees from backend
+  Future<void> fetchEmployees() async {
+    try {
+      final response = await http.get(Uri.parse("$apiUrl/employees"));
+      if (response.statusCode == 200) {
+        allEmployees = json.decode(response.body)["employees"];
+      }
+    } catch (e) {
+      debugPrint("❌ Fetch employees error: $e");
+    }
+  }
+
+  /// Setup domains based on selected employee or default user
+  Future<void> _setupDomainsForEmployee() async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+
+    final String role = (userProvider.position ?? "").toUpperCase();
+    final String? domain = userProvider.domain;
+
+    // 🔴 TL → ONLY their domain in dropdown
+    if (role == "TL" && domain != null && domain.isNotEmpty) {
+      setState(() {
+        domains = [domain]; // 👈 ONLY ONE DOMAIN
+        selectedDomain = domain;
+      });
+      applyFilter();
+      return; // ⛔ VERY IMPORTANT (stops fetchDomains)
+    }
+
+    // 🟡 HR / Founder → all domains
+    await fetchDomains();
+    applyFilter();
+  }
+
+  /// Fetch all domains from backend
+  Future<void> fetchDomains() async {
+    try {
+      final response = await http.get(Uri.parse("$apiUrl/domains"));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          domains = List<String>.from(data['domains']);
+          if (!domains.contains("All")) domains.insert(0, "All");
+          selectedDomain = "All";
+        });
+      }
+    } catch (e) {
+      debugPrint("❌ Fetch domains error: $e");
+    }
+  }
+
+  @override
+  void dispose() {
+    filteredLeavesNotifier.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  /// Fetch leaves based on filters
+  Future<void> applyFilter() async {
+    try {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      final String role = userProvider.position ?? "";
+      final String empId = selectedEmployeeId ?? userProvider.employeeId ?? "";
+
+      String url = "$apiUrl/filter?role=$role&employeeId=$empId";
+
+      if (selectedFilter == "Last 7 Days") {
+        url +=
+            "&status=All&fromDate=${_formatter.format(DateTime.now().subtract(const Duration(days: 6)))}"
+            "&toDate=${_formatter.format(DateTime.now())}";
+      } else if (selectedFilter == "Last 30 Days") {
+        url +=
+            "&status=All&fromDate=${_formatter.format(DateTime.now().subtract(const Duration(days: 29)))}"
+            "&toDate=${_formatter.format(DateTime.now())}";
+      } else if (selectedFilter == "Custom Range" && customRange != null) {
+        url +=
+            "&status=All&fromDate=${_formatter.format(customRange!.start)}"
+            "&toDate=${_formatter.format(customRange!.end)}";
+      } else {
+        url += "&status=$selectedFilter";
+      }
+
+      if (selectedDomain != "All") {
+        url += "&domain=$selectedDomain";
+      }
+
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final items = json.decode(response.body)["items"];
+        setState(() {
+          allLeaves = items;
+          _expandedReasons.clear();
+        });
+        _applySearch();
+      }
+    } catch (e) {
+      debugPrint("❌ Filter Error: $e");
+    }
+  }
+
+  void _applySearch() {
+    final query = searchQuery.toLowerCase();
+    final results = allLeaves.where((leave) {
+      final name = (leave['employeeName'] ?? '').toString().toLowerCase();
+      final status = (leave['status'] ?? '').toString().toLowerCase();
+      return name.contains(query) || status.contains(query);
+    }).toList();
+
+    filteredLeavesNotifier.value = results;
   }
 
   @override
@@ -260,168 +166,408 @@ class _LeaveApprovalPageState extends State<LeaveApprovalPage> {
       title: "Leave Approval",
       body: Column(
         children: [
-          // 🔹 Filter Row
           Padding(
-            padding: const EdgeInsets.only(right: 30, top: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                /// Search Bar
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (val) {
+                      searchQuery = val;
+                      _applySearch();
+                    },
+                    decoration: InputDecoration(
+                      hintText: "Search by employee name or status",
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+
+                /// Filter Button
                 ElevatedButton.icon(
                   onPressed: () async {
-                    final String? value = await showMenu<String>(
+                    final val = await showMenu<String>(
                       context: context,
                       position: const RelativeRect.fromLTRB(1000, 80, 20, 0),
-                      items: [
-                        const PopupMenuItem(value: "All", child: Text("All")),
-                        const PopupMenuItem(
+                      items: const [
+                        PopupMenuItem(value: "Pending", child: Text("Pending")),
+                        PopupMenuItem(
+                          value: "Approved",
+                          child: Text("Approved"),
+                        ),
+                        PopupMenuItem(
+                          value: "Rejected",
+                          child: Text("Rejected"),
+                        ),
+                        PopupMenuItem(value: "All", child: Text("All History")),
+                        PopupMenuDivider(),
+                        PopupMenuItem(
                           value: "Last 7 Days",
                           child: Text("Last 7 Days"),
                         ),
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: "Last 30 Days",
                           child: Text("Last 30 Days"),
                         ),
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: "Custom Range",
                           child: Text("Custom Range"),
                         ),
                       ],
                     );
 
-                    if (value != null) {
-                      if (value == "Custom Range") {
-                        await _pickDateRange(context);
-                      } else {
-                        setState(() {
-                          selectedFilter = value;
-                        });
-                        applyFilter();
-                      }
+                    if (val == "Custom Range") {
+                      await _pickDateRange(context);
+                    } else if (val != null) {
+                      setState(() {
+                        selectedFilter = val;
+                        searchQuery = "";
+                        _searchController.clear();
+                      });
+                      applyFilter();
                     }
                   },
-                  icon: const Icon(Icons.filter_list),
-                  label: const Text("Filter"),
+                  icon: const Icon(Icons.filter_alt_outlined),
+                  label: Text("Filter: $selectedFilter"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.deepPurple,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                const SizedBox(width: 12),
+
+                /// Domain Button
+                ElevatedButton(
+                  onPressed: () async {
+                    final val = await showMenu<String>(
+                      context: context,
+                      position: const RelativeRect.fromLTRB(1000, 80, 20, 0),
+                      items: domains
+                          .map((d) => PopupMenuItem(value: d, child: Text(d)))
+                          .toList(),
+                    );
+                    if (val != null) {
+                      setState(() {
+                        selectedDomain = val;
+                      });
+                      applyFilter();
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple, // same as filter button
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
                     ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.domain_outlined,
+                        size: 18,
+                      ), // optional icon
+                      const SizedBox(width: 6),
+                      Text(selectedDomain),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
 
-          // 🔽 Show custom range if selected
-          if (selectedFilter == "Custom Range" && customRange != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                "Selected: ${_formatter.format(customRange!.start)} → ${_formatter.format(customRange!.end)}",
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontStyle: FontStyle.italic,
-                  color: Colors.purple,
-                ),
-              ),
-            ),
-
-          // 🔽 Expanded List
+          /// Leave List
           Expanded(
-            child: filteredLeaves.isEmpty
-                ? const Center(child: Text("No leave requests to show"))
-                : ListView.builder(
-                    itemCount: filteredLeaves.length,
-                    itemBuilder: (context, index) {
-                      final leave = filteredLeaves[index];
+            child: Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true,
+              child: ValueListenableBuilder<List<dynamic>>(
+                valueListenable: filteredLeavesNotifier,
+                builder: (context, currentFilteredLeaves, child) {
+                  if (currentFilteredLeaves.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        "No data found for this filter",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    );
+                  }
+                  return ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: currentFilteredLeaves.length,
+                    itemBuilder: (context, i) {
+                      final leave = currentFilteredLeaves[i];
+                      final String leaveId = leave['_id'];
+                      final bool expanded = _expandedReasons.contains(leaveId);
 
                       return Card(
-                        margin: const EdgeInsets.all(8),
-                        child: ListTile(
-                          leading: const Icon(
-                            Icons.person,
-                            color: Colors.purple,
-                          ),
-                          title: Text(
-                            "${leave['employeeName']} - ${leave['leaveType']}",
-                          ),
-                          subtitle: Text(
-                            "From: ${_formatDate(leave['fromDate'])} To: ${_formatDate(leave['toDate'])}\nReason: ${leave['reason']}",
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
+                        elevation: 3,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.check_circle,
-                                  color: Colors.green,
-                                ),
-                                onPressed: () =>
-                                    updateLeaveStatus(leave['_id'], "Approved"),
-                              ),
-                              IconButton(
-                                icon: const Icon(
-                                  Icons.cancel,
-                                  color: Colors.red,
-                                ),
-                                onPressed: () =>
-                                    updateLeaveStatus(leave['_id'], "Rejected"),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: leave['status'] == "Approved"
-                                      ? Colors.green
-                                      : leave['status'] == "Rejected"
-                                      ? Colors.red
-                                      : Colors.orange,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  leave['status'] ?? "Pending",
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    leave['employeeName'],
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
-                                ),
+                                  _buildStatusBadge(leave['status']),
+                                ],
                               ),
+                              const Divider(),
+                              Text("Leave Type: ${leave['leaveType']}"),
+                              const SizedBox(height: 4),
+                              Text(
+                                "Dates: ${leave['fromDate']} to ${leave['toDate']}",
+                              ),
+                              const SizedBox(height: 6),
+
+                              Builder(
+                                builder: (context) {
+                                  final String reasonText =
+                                      leave['reason'] ?? 'N/A';
+                                  // We use 90 characters as a safe estimate for 2 lines on most mobile screens
+                                  final bool isLong = reasonText.length > 90;
+
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        reasonText,
+                                        maxLines: expanded ? null : 2,
+                                        overflow: expanded
+                                            ? TextOverflow.visible
+                                            : TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.grey[700],
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      if (isLong)
+                                        GestureDetector(
+                                          onTap: () {
+                                            setState(() {
+                                              if (expanded) {
+                                                _expandedReasons.remove(
+                                                  leaveId,
+                                                );
+                                              } else {
+                                                _expandedReasons.add(leaveId);
+                                              }
+                                            });
+                                          },
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(
+                                              top: 4,
+                                            ),
+                                            child: Text(
+                                              expanded
+                                                  ? "Show Less"
+                                                  : "Show More",
+                                              style: const TextStyle(
+                                                color: Colors.deepPurple,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+
+                              if (leave['status'] == "Pending") ...[
+                                const SizedBox(height: 12),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: () => updateStatus(
+                                        leave['_id'],
+                                        "Rejected",
+                                      ),
+                                      icon: const Icon(
+                                        Icons.close,
+                                        color: Colors.red,
+                                        size: 20,
+                                      ),
+                                      label: const Text(
+                                        "Reject",
+                                        style: TextStyle(color: Colors.red),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton.icon(
+                                      onPressed: () => updateStatus(
+                                        leave['_id'],
+                                        "Approved",
+                                      ),
+                                      icon: const Icon(
+                                        Icons.check,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                      label: const Text("Approve"),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
                           ),
                         ),
                       );
                     },
-                  ),
+                  );
+                },
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  // ✅ Update Leave Status
-  Future<void> updateLeaveStatus(String id, String status) async {
-    setState(() {
-      final index = leaveRequests.indexWhere((leave) => leave['_id'] == id);
-      if (index != -1) {
-        leaveRequests[index]['status'] = status;
-      }
-    });
+  Widget _buildStatusBadge(String status) {
+    Color color = Colors.orange;
+    if (status == "Approved") color = Colors.green;
+    if (status == "Rejected") color = Colors.red;
 
-    try {
-      final response = await http.put(
-        Uri.parse("$apiUrl/status/$id"),
-        headers: {"Content-Type": "application/json"},
-        body: json.encode({"status": status}),
-      );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
 
-      if (response.statusCode != 200) {
-        fetchAllLeaves();
-      }
-    } catch (e) {
-      fetchAllLeaves();
-    }
+  Future<void> updateStatus(String id, String status) async {
+    final response = await http.put(
+      Uri.parse("$apiUrl/status/$id"),
+      headers: {"Content-Type": "application/json"},
+      body: json.encode({"status": status}),
+    );
+    if (response.statusCode == 200) applyFilter();
+  }
+
+  Future<void> _pickDateRange(BuildContext context) async {
+    DateTime tempFrom = fromDate;
+    DateTime tempTo = toDate;
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: StatefulBuilder(
+          builder: (context, setModalState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Select Custom Date Range",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: "From Date",
+                  suffixIcon: Icon(Icons.calendar_today),
+                ),
+                controller: TextEditingController(
+                  text: _formatter.format(tempFrom),
+                ),
+                onTap: () async {
+                  final p = await showDatePicker(
+                    context: context,
+                    initialDate: tempFrom,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2100),
+                  );
+                  if (p != null) setModalState(() => tempFrom = p);
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: "To Date",
+                  suffixIcon: Icon(Icons.calendar_today),
+                ),
+                controller: TextEditingController(
+                  text: _formatter.format(tempTo),
+                ),
+                onTap: () async {
+                  final p = await showDatePicker(
+                    context: context,
+                    initialDate: tempTo,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2100),
+                  );
+                  if (p != null) setModalState(() => tempTo = p);
+                },
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    fromDate = tempFrom;
+                    toDate = tempTo;
+                    customRange = DateTimeRange(start: fromDate, end: toDate);
+                    selectedFilter = "Custom Range";
+                  });
+                  Navigator.pop(context);
+                  applyFilter();
+                },
+                child: const Text("Apply Filter"),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

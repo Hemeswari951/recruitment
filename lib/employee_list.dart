@@ -1,9 +1,11 @@
+// employee_list.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'sidebar.dart';
+import 'employee_profile.dart'; // if you use HRViewEmployeeProfile
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io'; // for File (mobile)
@@ -31,7 +33,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
   Future<void> fetchEmployees() async {
     try {
       final response = await http.get(
-        Uri.parse("http://localhost:5000/api/employees"),
+        Uri.parse("https://company-04bz.onrender.com/api/employees"),
       );
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
@@ -77,7 +79,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
   Future<void> _deleteEmployee(String employeeId) async {
     try {
       final response = await http.delete(
-        Uri.parse("http://localhost:5000/api/employees/$employeeId"),
+        Uri.parse("https://company-04bz.onrender.com/api/employees/$employeeId"),
       );
 
       if (response.statusCode == 200) {
@@ -108,10 +110,14 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
     final nameController = TextEditingController(text: emp["employeeName"]);
     final positionController = TextEditingController(text: emp["position"]);
     final domainController = TextEditingController(text: emp["domain"]);
+    final passwordController = TextEditingController(
+      text: emp['password'] ?? "",
+    );
     final imageController = TextEditingController(
       text: emp["employeeImage"] ?? "",
     );
 
+    bool obscurePassword = true;
     Uint8List? pickedImageBytes; // Web
     File? pickedImageFile; // Mobile
 
@@ -143,6 +149,27 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                 TextField(
                   controller: domainController,
                   decoration: const InputDecoration(labelText: "Domain"),
+                ),
+                const SizedBox(height: 12),
+
+                // 🔐 Password field (only visible in edit dialog)
+                TextField(
+                  controller: passwordController,
+                  obscureText: obscurePassword,
+                  decoration: InputDecoration(
+                    labelText: "Password",
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        obscurePassword
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                      ),
+                      //onPressed: () => setStateDialog(() {
+                      onPressed: () => setState(() {
+                        obscurePassword = !obscurePassword;
+                      }),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
 
@@ -218,7 +245,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                           : pickedImageFile != null
                           ? Image.file(pickedImageFile!, fit: BoxFit.cover)
                           : Image.network(
-                              "http://localhost:5000${emp["employeeImage"]}",
+                              "https://company-04bz.onrender.com${emp["employeeImage"]}",
                               fit: BoxFit.cover,
                             ),
                     ),
@@ -237,12 +264,13 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                   var request = http.MultipartRequest(
                     'PUT',
                     Uri.parse(
-                      "http://localhost:5000/api/employees/${idController.text}",
+                      "https://company-04bz.onrender.com/api/employees/${idController.text}",
                     ),
                   );
                   request.fields['employeeName'] = nameController.text;
                   request.fields['position'] = positionController.text;
                   request.fields['domain'] = domainController.text;
+                  request.fields['password'] = passwordController.text;
 
                   if (pickedImageBytes != null) {
                     request.files.add(
@@ -580,7 +608,7 @@ class _EmployeeDataTableState extends State<_EmployeeDataTable> {
                           onPressed: () async {
                             final empId = emp["employeeId"];
                             final url = Uri.parse(
-                              "http://localhost:5000/apply/fetch/$empId",
+                              "https://company-04bz.onrender.com/apply/fetch/$empId",
                             );
                             try {
                               final res = await http.get(url);
@@ -699,6 +727,21 @@ class _EmployeeDataTableState extends State<_EmployeeDataTable> {
                             }
                           },
                         ),
+                        /// 👁 View Profile
+IconButton(
+  icon: const Icon(Icons.visibility, color: Colors.purple),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EmployeeProfilePage(
+          overrideEmployeeId: emp["employeeId"],
+          readOnly: true,
+        ),
+      ),
+    );
+  },
+),
 
                         /// ✏️ Edit
                         IconButton(

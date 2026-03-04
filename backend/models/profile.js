@@ -1,3 +1,4 @@
+// models/profile.js
 const mongoose = require('mongoose');
 
 // --- Experience Schema ---
@@ -16,6 +17,7 @@ const employeeSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
   full_name: { type: String },
   date_of_appointment: { type: String },
+  password: { type: String, required: false, trim: true },
   annual_ctc:{type:String},
   monthly_ctc:{type:String},
   monthly_gross:{type:String},
@@ -71,45 +73,3 @@ const Profile = mongoose.models.Profile || mongoose.model('Profile', employeeSch
 module.exports = Profile;
 
 
-// --- OPTIONAL: Run this file directly to test adding experience ---
-// if (require.main === module) {
-//   const MONGO_URI = 'mongodb://localhost:27017/Dashboard_Db';
-
-//   mongoose.connect(MONGO_URI)
-//     .then(() => {
-//       console.log('✅ MongoDB connected');
-//       return addExperience();
-//     })
-//     .catch(err => console.error('❌ MongoDB connection error:', err));
-
-//   async function addExperience() {
-//    // const employeeId = 'EMP001';  // Update this with a valid ID in your DB
-
-//     const newExperience = {
-//       company_name: 'FutureTech Innovations',
-//       role: 'Lead Engineer',
-//       start_date: '2023-01-01',
-//       end_date: '2025-06-30',
-//       description: 'Managed cross-functional tech teams and infrastructure.'
-//     };
-
-//     try {
-//       const updatedProfile = await Profile.findOneAndUpdate(
-//         { id: employeeId },
-//         { $push: { experiences: newExperience } },
-//         { new: true }
-//       );
-
-//       if (!updatedProfile) {
-//         console.log('❌ Employee not found with id:', employeeId);
-//       } else {
-//         console.log('✅ Experience added successfully.');
-//         console.log('📄 Updated Profile:', JSON.stringify(updatedProfile, null, 2));
-//       }
-//     } catch (err) {
-//       console.error('❌ Error updating experience:', err);
-//     } finally {
-//       mongoose.disconnect();
-//     }
-//   }
-// }

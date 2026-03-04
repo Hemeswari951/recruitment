@@ -1,3 +1,4 @@
+//backend/models/offerletter_counter.js
 const mongoose = require("mongoose");
 
 const counterSchema = new mongoose.Schema({

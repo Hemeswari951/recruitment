@@ -1,3 +1,4 @@
+//revised_pdf_content_model.dart
 class RevisedPdfContentModel {
   // Page 1
   String dearName;
@@ -56,8 +57,9 @@ class RevisedPdfContentModel {
     this.positionBody =
         "      We are pleased to extend this revised offer letter to formally confirm your transition from {fromposition} to {position} at ZeAI Soft, effective {doj}. In this role, you will report directly to the Team Lead (TL), who will provide guidance and support. This change in designation reflects your continued dedication, growing skillset, and the positive contributions you have made during your training period with us. We are confident that you will continue to add value to the team in this expanded role. During your time at ZeAI Soft you have shown strong initiative, adaptability, and a willingness to learn. Your performance has met the expectations laid out for the trainee program, and we believe you are ready to move forward into a more responsible and structured position within the organization.",
     this.compensationTitle = "Compensation",
+    // NOTE: use {salaryFrom} placeholder — service will render it as "February 2026" (Month Year).
     this.compensationBody =
-        "      In recognition of your enhanced role and responsibilities, your compensation has been revised. You will now receive a monthly salary of Rs. {stipend}, effective from [Effective Date]. Additionally, your annual CTC has been updated to {ctc} , which reflects your upgraded position within the organization. Further compensation adjustments will be aligned with performance evaluations, company policy, and overall organizational growth.All other benefits, allowances, and employment terms will continue as per company guidelines.",
+        "       In recognition of your enhanced role and responsibilities, your compensation  has been revised. You will now receive a monthly salary of {stipend}, effective from {salaryFrom}. Additionally, your annual CTC has been updated to {ctc} , which reflects your upgraded position within the organization. Further compensation adjustments will be aligned with performance evaluations, company policy, and overall organizational growth.All other benefits, allowances, and employment terms will continue as per company guidelines.",
     this.confidentialityTitle = "Confidentiality and Non Disclosure",
     this.confidentialityBody =
         "      You are expected to uphold the highest standards of confidentiality concerning the company's operations. This includes safeguarding all information, documents, instruments, and any materials related to the company that you encounter during your assessment period. Additionally, you must refrain from disclosing any confidential information in accordance with the \"Non-Disclosure and Confidentiality Policy.\"",

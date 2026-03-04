@@ -5,7 +5,7 @@ import 'package:http_parser/http_parser.dart';
 import 'package:file_picker/file_picker.dart';
 
 class OffCampusService {
-  static const String baseUrl = 'http://localhost:5000'; // CHANGE if needed
+  static const String baseUrl = 'https://company-04bz.onrender.com'; // CHANGE if needed
 
   /// GET all drives
   static Future<List<dynamic>> fetchDrives() async {
@@ -107,12 +107,29 @@ class OffCampusService {
   }
 
   /// DELETE student
-  static Future<bool> deleteStudent(String driveId, String studentId) async {
-    final resp = await http.delete(
-      Uri.parse('$baseUrl/api/offcampus/$driveId/students/$studentId'),
-    );
-    return resp.statusCode == 200;
+  // static Future<bool> deleteStudent(String driveId, String studentId) async {
+  //   final resp = await http.delete(
+  //     Uri.parse('$baseUrl/api/offcampus/$driveId/students/$studentId'),
+  //   );
+  //   return resp.statusCode == 200;
+  // }
+  /// DELETE student — treat any 2xx as success, throw on failure
+static Future<void> deleteStudent(String driveId, String studentId) async {
+  final url = Uri.parse('$baseUrl/api/offcampus/$driveId/students/$studentId');
+  final resp = await http.delete(url);
+
+  // debug print (remove in production)
+  // ignore: avoid_print
+  print('DELETE $url -> ${resp.statusCode} ${resp.body}');
+
+  if (resp.statusCode >= 200 && resp.statusCode < 300) {
+    return; // success
   }
+
+  final body = resp.body.isNotEmpty ? resp.body : 'no response body';
+  throw Exception('Delete failed: ${resp.statusCode} - $body');
+}
+
 
   /// EXPORT drive PDF
   static Future<http.Response> exportDrivePdf(String driveId) async {

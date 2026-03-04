@@ -1,3 +1,4 @@
+// leave_management.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -18,6 +19,7 @@ class LeaveManagement extends StatefulWidget {
 class _LeaveManagementState extends State<LeaveManagement> {
   late Future<List<Map<String, dynamic>>> _leavesFuture;
   String? employeeId;
+  final Set<String> _expandedReasons = {};
 
   @override
   void initState() {
@@ -33,44 +35,43 @@ class _LeaveManagementState extends State<LeaveManagement> {
   }
 
   Future<List<Map<String, dynamic>>> fetchLeaves() async {
-  if (employeeId == null) {
-    throw Exception("Employee ID not found");
+    if (employeeId == null) {
+      throw Exception("Employee ID not found");
+    }
+
+    final String fetchUrl = 'https://company-04bz.onrender.com/apply/fetch/$employeeId';
+    debugPrint("👉 Fetching leaves from: $fetchUrl");
+
+    final response = await http.get(Uri.parse(fetchUrl));
+
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+
+      // Support either list or { items: [...] }
+      final List<dynamic> data =
+          decoded is List ? decoded : (decoded['items'] ?? []);
+
+      final leaves = data.cast<Map<String, dynamic>>();
+
+      // Filter out cancelled (same as before)
+      return leaves
+          .where((leave) => leave['status']?.toLowerCase() != 'cancelled')
+          .toList();
+    } else {
+      throw Exception('Failed to load leave data');
+    }
   }
-
-  final String fetchUrl = 'http://localhost:5000/apply/fetch/$employeeId';
-  print("👉 Fetching leaves from: $fetchUrl");
-
-  final response = await http.get(Uri.parse(fetchUrl));
-
-  if (response.statusCode == 200) {
-    final decoded = json.decode(response.body);
-
-    // ✅ If backend wraps response in { items: [...] }
-    final List<dynamic> data =
-        decoded is List ? decoded : (decoded['items'] ?? []);
-
-    final leaves = data.cast<Map<String, dynamic>>();
-
-    // ✅ Filter out cancelled
-    return leaves
-        .where((leave) => leave['status']?.toLowerCase() != 'cancelled')
-        .toList();
-  } else {
-    throw Exception('Failed to load leave data');
-  }
-}
-
 
   Future<void> _cancelLeave(String leaveId) async {
     if (employeeId == null) return;
 
     final String deleteUrl =
-        'http://localhost:5000/apply/delete/$employeeId/$leaveId';
-    print('🔗 Deleting leave via: $deleteUrl');
+        'https://company-04bz.onrender.com/apply/delete/$employeeId/$leaveId';
+    debugPrint('🔗 Deleting leave via: $deleteUrl');
 
     final response = await http.delete(Uri.parse(deleteUrl));
-    print('🧾 Response status: ${response.statusCode}');
-    print('📦 Response body: ${response.body}');
+    debugPrint('🧾 Response status: ${response.statusCode}');
+    debugPrint('📦 Response body: ${response.body}');
 
     if (response.statusCode == 200 && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -115,14 +116,12 @@ class _LeaveManagementState extends State<LeaveManagement> {
     if (rawDate == null || rawDate.isEmpty) return '';
     try {
       final DateTime parsedDate = DateTime.parse(rawDate);
-      // ✅ Correct format: yyyy/MM/dd
       return DateFormat('yyyy/MM/dd').format(parsedDate);
     } catch (e) {
       return rawDate;
     }
   }
 
-  // ✅ Status color mapping
   Color _getStatusColor(String? status) {
     switch (status?.toLowerCase()) {
       case 'approved':
@@ -134,6 +133,26 @@ class _LeaveManagementState extends State<LeaveManagement> {
       default:
         return Colors.black;
     }
+  }
+
+  Widget _buildStatusBadge(String? status) {
+    final s = (status ?? 'Pending');
+    Color color = Colors.orange;
+    if (s.toLowerCase() == 'approved') color = Colors.green;
+    if (s.toLowerCase() == 'rejected') color = Colors.red;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        s,
+        style: TextStyle(color: color, fontWeight: FontWeight.bold),
+      ),
+    );
   }
 
   @override
@@ -189,130 +208,161 @@ class _LeaveManagementState extends State<LeaveManagement> {
                             child: Text('No leave history found.'),
                           );
                         } else {
-                          return _buildLeaveTable(snapshot.data!);
+                          final leaves = snapshot.data!;
+                          return ListView.builder(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            itemCount: leaves.length,
+                            itemBuilder: (context, index) {
+                              final leave = leaves[index];
+                              final id = leave['_id']?.toString() ?? '';
+                              final status = (leave['status'] ?? 'Pending')
+                                  .toString();
+                              final isActionable = status.toLowerCase() !=
+                                      'approved' &&
+                                  status.toLowerCase() != 'rejected';
+
+                              final String employeeName =
+                                  leave['employeeName'] ??
+                                      Provider.of<UserProvider>(context,
+                                              listen: false)
+                                          .employeeId ??
+                                      'Employee';
+
+                              final String reasonText =
+                                  (leave['reason'] ?? '').toString();
+
+                              final bool isLong = reasonText.length > 120;
+                              final bool expanded = _expandedReasons.contains(id);
+
+                              return Card(
+                                elevation: 3,
+                                margin:
+                                    const EdgeInsets.only(bottom: 12, top: 4),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            employeeName,
+                                            style: const TextStyle(
+                                              fontSize: 17,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                          _buildStatusBadge(status),
+                                        ],
+                                      ),
+                                      const Divider(),
+                                      Text("Leave Type: ${leave['leaveType'] ?? ''}"),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        "Dates: ${_formatDate(leave['fromDate'])} to ${_formatDate(leave['toDate'])}",
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        reasonText,
+                                        maxLines: expanded ? null : 2,
+                                        overflow: expanded
+                                            ? TextOverflow.visible
+                                            : TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.grey[700],
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      if (isLong)
+                                        GestureDetector(
+                                          onTap: () {
+                                            setState(() {
+                                              if (expanded) {
+                                                _expandedReasons.remove(id);
+                                              } else {
+                                                _expandedReasons.add(id);
+                                              }
+                                            });
+                                          },
+                                          child: Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 6),
+                                            child: Text(
+                                              expanded ? "Show Less" : "Show More",
+                                              style: const TextStyle(
+                                                color: Colors.deepPurple,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
+                                        children: [
+                                          IconButton(
+                                            tooltip: "Edit",
+                                            icon: Icon(
+                                              Icons.edit,
+                                              color: isActionable
+                                                  ? Colors.blue
+                                                  : Colors.blue.withOpacity(0.4),
+                                            ),
+                                            onPressed: isActionable
+                                                ? () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (_) =>
+                                                            ApplyLeave(
+                                                                existingLeave:
+                                                                    leave),
+                                                      ),
+                                                    ).then((_) {
+                                                      // refresh after return
+                                                      setState(() {
+                                                        _leavesFuture =
+                                                            fetchLeaves();
+                                                      });
+                                                    });
+                                                  }
+                                                : null,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            tooltip: "Cancel",
+                                            icon: Icon(
+                                              Icons.delete,
+                                              color: isActionable
+                                                  ? Colors.red
+                                                  : Colors.red.withOpacity(0.4),
+                                            ),
+                                            onPressed: isActionable
+                                                ? () => _confirmCancel(context, id)
+                                                : null,
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          );
                         }
                       },
                     ),
                   ),
                 ],
               ),
-      ),
-    );
-  }
-
-  Widget _buildLeaveTable(List<Map<String, dynamic>> leaves) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: SizedBox(
-        width: MediaQuery.of(context).size.width,
-        child: DataTable(
-          headingRowColor: WidgetStateProperty.all(Colors.white),
-          dataRowColor: WidgetStateProperty.all(Colors.white),
-          columns: const [
-            DataColumn(
-              label: Text('Leave Type', style: TextStyle(color: Colors.black)),
-            ),
-            DataColumn(
-              label: Text('From Date', style: TextStyle(color: Colors.black)),
-            ),
-            DataColumn(
-              label: Text('To Date', style: TextStyle(color: Colors.black)),
-            ),
-            DataColumn(
-              label: Text('Reason', style: TextStyle(color: Colors.black)),
-            ),
-            DataColumn(
-              label: Text('Status', style: TextStyle(color: Colors.black)),
-            ),
-            DataColumn(
-              label: Text('Actions', style: TextStyle(color: Colors.black)),
-            ),
-          ],
-          rows: leaves.map((leave) {
-            final id = leave['_id']?.toString() ?? '';
-            final status = leave['status'] ?? 'Pending';
-
-            // ✅ Disable actions if approved/rejected
-            final isActionable =
-                status.toLowerCase() != 'approved' &&
-                status.toLowerCase() != 'rejected';
-
-            return DataRow(
-              cells: [
-                DataCell(
-                  Text(
-                    leave['leaveType'] ?? '',
-                    style: const TextStyle(color: Colors.black),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    _formatDate(leave['fromDate']),
-                    style: const TextStyle(color: Colors.black),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    _formatDate(leave['toDate']),
-                    style: const TextStyle(color: Colors.black),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    leave['reason'] ?? '',
-                    style: const TextStyle(color: Colors.black),
-                  ),
-                ),
-                DataCell(
-                  // ✅ Colored status text
-                  Text(
-                    status,
-                    style: TextStyle(
-                      color: _getStatusColor(status),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          Icons.edit,
-                          color: isActionable
-                              ? Colors.blue
-                              : Colors.blue.withOpacity(0.5),
-                        ),
-                        onPressed: isActionable
-                            ? () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        ApplyLeave(existingLeave: leave),
-                                  ),
-                                );
-                              }
-                            : null,
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.delete,
-                          color: isActionable
-                              ? Colors.red
-                              : Colors.red.withOpacity(0.5),
-                        ),
-                        onPressed: isActionable
-                            ? () => _confirmCancel(context, id)
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          }).toList(),
-        ),
       ),
     );
   }

@@ -1,3 +1,4 @@
+//lib/onboard.dart
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
@@ -14,6 +15,7 @@ import 'hr_policy_page.dart';
 import 'view_offer_letter_page.dart';
 import 'generate_revised_offer_page.dart';
 import 'view_revised_offer_page.dart';
+import 'bulk_offer_letter_page.dart';
 
 class OnBoardPage extends StatelessWidget {
   const OnBoardPage({super.key});
@@ -97,32 +99,74 @@ class OnBoardPage extends StatelessWidget {
               title: const Text("Offer Letter Options"),
               content: const Text("What would you like to do?"),
               actions: <Widget>[
-                TextButton(
-                  child: const Text("Generate Offer Letter"),
-                  onPressed: () {
-                    Navigator.of(context).pop(); // Close the dialog
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute<void>(
-                        builder: (_) => const OfferLetterPage(),
-                      ),
-                    );
-                  },
+  TextButton(
+    child: const Text("Generate Offer Letter"),
+    onPressed: () {
+      Navigator.of(context).pop(); // Close the dialog
+      Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => const OfferLetterPage(),
+        ),
+      );
+    },
+  ),
+  TextButton(
+    child: const Text("View Offer Letter"),
+    onPressed: () {
+      Navigator.of(context).pop(); // Close dialog
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const ViewOfferLetterPage(),
+        ),
+      );
+    },
+  ),
+  // === NEW BUTTON: Bulk Upload ===
+  TextButton(
+  child: const Text("Bulk Upload (Excel)"),
+  onPressed: () {
+    Navigator.of(context).pop(); // Close dialog
+    showGeneralDialog(
+      context: context,
+      barrierLabel: "Bulk Upload",
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return SafeArea(
+          child: Center(
+            child: Material(
+              color: Colors.transparent,
+              child: SizedBox(
+                width: MediaQuery.of(context).size.width * 0.86,
+                height: MediaQuery.of(context).size.height * 0.86,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: BulkOfferLetterPage(isModal: true),
                 ),
-                TextButton(
-                  child: const Text("View Offer Letter"),
-                  onPressed: () {
-                    // TODO: Implement navigation to a page for viewing offer letters
-                    Navigator.of(context).pop(); // Close dialog
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const ViewOfferLetterPage(),
-                      ),
-                    );
-                  },
-                ),
-              ],
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = Curves.easeOut.transform(animation.value);
+        return Opacity(
+          opacity: animation.value,
+          child: Transform.scale(
+            scale: 0.95 + (0.05 * curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  },
+),
+
+],
+
             );
           },
         );

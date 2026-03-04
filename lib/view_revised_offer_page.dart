@@ -1,4 +1,6 @@
+//view_revised_offer_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
@@ -25,6 +27,9 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
   Map<String, int> _monthCounts = {};
   Timer? _debounce;
   final FocusNode _searchFocusNode = FocusNode();
+
+  // A simple counter used to recreate the data table when we want to reset its internal scroll state.
+  int _refreshKey = 0;
 
   static const List<String> _monthNames = [
     "All Months",
@@ -59,7 +64,7 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
 
     try {
       final response = await http.get(
-        Uri.parse('http://localhost:5000/api/revisedofferletter'),
+        Uri.parse('https://company-04bz.onrender.com/api/revisedofferletter'),
       );
 
       if (response.statusCode == 200) {
@@ -146,8 +151,7 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
 
       await Printing.sharePdf(
         bytes: pdfBytes,
-        filename:
-            'revised_offer_letters_${_selectedYear}_$_selectedMonth.pdf',
+        filename: 'revised_offer_letters_${_selectedYear}_$_selectedMonth.pdf',
       );
     } catch (e) {
       ScaffoldMessenger.of(
@@ -193,7 +197,7 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
 
     try {
       final response = await http.delete(
-        Uri.parse('http://localhost:5000/api/revisedofferletter/$id'),
+        Uri.parse('https://company-04bz.onrender.com/api/revisedofferletter/$id'),
       );
 
       if (!mounted) return;
@@ -230,6 +234,8 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
     final ctcController = TextEditingController(text: offer['ctc']);
     final dojController = TextEditingController(text: offer['doj']);
     final signdateController = TextEditingController(text: offer['signdate']);
+    // *** ADDED: salaryFrom controller to edit dialog
+    final salaryFromController = TextEditingController(text: offer['salaryFrom']);
 
     await showDialog(
       context: context,
@@ -277,6 +283,11 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
                   controller: signdateController,
                   decoration: const InputDecoration(labelText: 'Signed Date'),
                 ),
+                // *** ADDED: Salary From field in edit dialog (matches backend field name)
+                TextFormField(
+                  controller: salaryFromController,
+                  decoration: const InputDecoration(labelText: 'Salary Effective From'),
+                ),
               ],
             ),
           ),
@@ -299,6 +310,8 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
                   'ctc': ctcController.text,
                   'doj': dojController.text,
                   'signdate': signdateController.text,
+                  // *** ADDED: include salaryFrom when saving
+                  'salaryFrom': salaryFromController.text,
                 });
               }
             },
@@ -325,6 +338,8 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
         ctc: updatedData['ctc']!,
         doj: updatedData['doj']!,
         signdate: updatedData['signdate']!,
+        // *** CHANGED: pass salaryFrom to the PDF generator (new required param)
+        salaryFrom: updatedData['salaryFrom'] ?? '',
         content: RevisedPdfContentModel(), // Use default or fetched template
       );
       final pdfBase64 = base64Encode(pdfBytes);
@@ -333,7 +348,7 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
       final body = {...updatedData, 'pdfFile': pdfBase64};
 
       final response = await http.put(
-        Uri.parse('http://localhost:5000/api/revisedofferletter/$id'),
+        Uri.parse('https://company-04bz.onrender.com/api/revisedofferletter/$id'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(body),
       );
@@ -401,6 +416,8 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
                     const SizedBox(height: 12),
                     _buildSearchBar(),
                     const SizedBox(height: 8),
+                    // Pass a ValueKey based on _refreshKey so the child is recreated when we want
+                    // to reset its internal scroll state.
                     Expanded(child: _buildBody()),
                     Align(
                       alignment: Alignment.bottomRight,
@@ -483,7 +500,26 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
         IconButton(
           tooltip: "Refresh",
           icon: const Icon(Icons.refresh),
-          onPressed: _fetchRevisedOffers,
+          onPressed: () async {
+            // 1) Re-fetch latest data
+            await _fetchRevisedOffers();
+
+            // 2) Reset filters/search so the table shows the full list ("normal")
+            _searchController.clear();
+            _searchFocusNode.unfocus();
+            setState(() {
+              _selectedMonth = "All Months";
+              _selectedYear = "All Years";
+              // bump the key so child rebuilds and its internal scroll controllers reset to top
+              _refreshKey++;
+            });
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Revised offers refreshed')),
+              );
+            }
+          },
         ),
       ],
     );
@@ -598,6 +634,7 @@ class _ViewRevisedOfferPageState extends State<ViewRevisedOfferPage> {
       );
     }
     return _RevisedOfferDataTable(
+      key: ValueKey(_refreshKey), // recreates the child when _refreshKey changes
       allOffers: _revisedOffers,
       searchController: _searchController,
       selectedMonth: _selectedMonth,
@@ -622,6 +659,7 @@ class _RevisedOfferDataTable extends StatefulWidget {
   final Function(String) onDelete;
 
   const _RevisedOfferDataTable({
+    super.key,
     required this.allOffers,
     required this.searchController,
     required this.selectedMonth,
@@ -637,6 +675,9 @@ class _RevisedOfferDataTable extends StatefulWidget {
 }
 
 class _RevisedOfferDataTableState extends State<_RevisedOfferDataTable> {
+  final ScrollController _horizontalController = ScrollController();
+  final ScrollController _verticalController = ScrollController();
+
   List<dynamic> _filteredOffers = [];
   Timer? _debounce;
 
@@ -645,15 +686,36 @@ class _RevisedOfferDataTableState extends State<_RevisedOfferDataTable> {
     super.initState();
     _filterOffers();
     widget.searchController.addListener(_onSearchChanged);
+
+    // After the first frame, ensure the table is scrolled to the top.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      try {
+        if (_verticalController.hasClients) _verticalController.jumpTo(0);
+        if (_horizontalController.hasClients) _horizontalController.jumpTo(0);
+      } catch (_) {
+        // ignore
+      }
+    });
   }
 
   @override
   void didUpdateWidget(covariant _RevisedOfferDataTable oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.allOffers != oldWidget.allOffers ||
+    // Use deep comparison for lists so that updates to contents trigger filtering.
+    if (!listEquals(widget.allOffers, oldWidget.allOffers) ||
         widget.selectedMonth != oldWidget.selectedMonth ||
         widget.selectedYear != oldWidget.selectedYear) {
       _filterOffers();
+
+      // also ensure scroll position resets when filters change
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          if (_verticalController.hasClients) _verticalController.jumpTo(0);
+          if (_horizontalController.hasClients) _horizontalController.jumpTo(0);
+        } catch (_) {
+          // ignore
+        }
+      });
     }
   }
 
@@ -661,6 +723,8 @@ class _RevisedOfferDataTableState extends State<_RevisedOfferDataTable> {
   void dispose() {
     _debounce?.cancel();
     widget.searchController.removeListener(_onSearchChanged);
+    _horizontalController.dispose();
+    _verticalController.dispose();
     super.dispose();
   }
 
@@ -668,6 +732,16 @@ class _RevisedOfferDataTableState extends State<_RevisedOfferDataTable> {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
       _filterOffers();
+
+      // when search changes, also ensure the content scrolls up to show the top result
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          if (_verticalController.hasClients) _verticalController.jumpTo(0);
+          if (_horizontalController.hasClients) _horizontalController.jumpTo(0);
+        } catch (_) {
+          // ignore
+        }
+      });
     });
   }
 
@@ -712,66 +786,78 @@ class _RevisedOfferDataTableState extends State<_RevisedOfferDataTable> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: constraints.maxWidth),
-            child: DataTable(
-              columns: const [
-                DataColumn(label: Text('Employee ID')),
-                DataColumn(label: Text('Full Name')),
-                DataColumn(label: Text('Previous Position')),
-                DataColumn(label: Text('Position')),
-                DataColumn(label: Text('Salary')),
-                DataColumn(label: Text('Date of Joining')),
-                DataColumn(label: Text('Created At')),
-                DataColumn(label: Text('Actions')),
-              ],
-              rows: _filteredOffers.map((offer) {
-                return DataRow(
-                  cells: [
-                    DataCell(Text(offer['employeeId'] ?? 'N/A')),
-                    DataCell(Text(offer['fullName'] ?? 'N/A')),
-                    DataCell(Text(offer['fromposition'] ?? 'N/A')),
-                    DataCell(Text(offer['position'] ?? 'N/A')),
-                    DataCell(Text(offer['stipend'] ?? 'N/A')),
-                    DataCell(Text(offer['doj'] ?? 'N/A')),
-                    DataCell(
-                      Text(
-                        offer['createdAt'] != null
-                            ? DateFormat(
-                                'dd-MM-yyyy',
-                              ).format(DateTime.parse(offer['createdAt']))
-                            : 'N/A',
-                      ),
-                    ),
-                    DataCell(
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.picture_as_pdf,
-                              color: Color.fromARGB(255, 145, 89, 155),
+        return Scrollbar(
+          controller: _horizontalController,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _horizontalController,
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: Scrollbar(
+                controller: _verticalController,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _verticalController,
+                  scrollDirection: Axis.vertical,
+                  child: DataTable(
+                    columns: const [
+                      DataColumn(label: Text('Employee ID')),
+                      DataColumn(label: Text('Full Name')),
+                      DataColumn(label: Text('Previous Position')),
+                      DataColumn(label: Text('Position')),
+                      DataColumn(label: Text('Salary')),
+                      DataColumn(label: Text('Salary From')),
+                      DataColumn(label: Text('Date of Joining')),
+                      DataColumn(label: Text('Created At')),
+                      DataColumn(label: Text('Actions')),
+                    ],
+                    rows: _filteredOffers.map((offer) {
+                      return DataRow(
+                        cells: [
+                          DataCell(Text(offer['employeeId'] ?? 'N/A')),
+                          DataCell(Text(offer['fullName'] ?? 'N/A')),
+                          DataCell(Text(offer['fromposition'] ?? 'N/A')),
+                          DataCell(Text(offer['position'] ?? 'N/A')),
+                          DataCell(Text(offer['stipend'] ?? 'N/A')),
+                          // *** ADDED: display salaryFrom column (may be a date or a string like "February 2026")
+                          DataCell(Text(offer['salaryFrom'] ?? 'N/A')),
+                          DataCell(Text(offer['doj'] ?? 'N/A')),
+                          DataCell(
+                            Text(
+                              offer['createdAt'] != null
+                                  ? DateFormat('dd-MM-yyyy')
+                                      .format(DateTime.parse(offer['createdAt']))
+                                  : 'N/A',
                             ),
-                            tooltip: 'View PDF',
-                            onPressed: () => widget.onViewPdf(offer['pdfFile']),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: Colors.blue),
-                            tooltip: 'Edit',
-                            onPressed: () => widget.onEdit(offer),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            tooltip: 'Delete',
-                            onPressed: () => widget.onDelete(offer['_id']),
+                          DataCell(
+                            Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.picture_as_pdf,
+                                    color: Color.fromARGB(255, 145, 89, 155),
+                                  ),
+                                  onPressed: () => widget.onViewPdf(offer['pdfFile']),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.edit, color: Colors.blue),
+                                  onPressed: () => widget.onEdit(offer),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () => widget.onDelete(offer['_id']),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
-                      ),
-                    ),
-                  ],
-                );
-              }).toList(),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
             ),
           ),
         );

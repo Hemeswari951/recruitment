@@ -1,4 +1,4 @@
-// lib/revised_offer_letter_pdf_service.dart
+//revised_offer_letter_pdf_service.dart
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -39,6 +39,28 @@ class RevisedOfferLetterPdfService {
         // If parsing fails, return the original string unchanged
         return input;
       }
+    }
+  }
+
+  /// Parse input and return Month Year (e.g. "February 2026").
+  /// If parsing fails, return the original input unchanged.
+  String _formatToMonthYear(String input) {
+    // Try ISO first (e.g. "2026-02-01" or "2026-02-01T00:00:00Z")
+    try {
+      final parsed = DateTime.parse(input);
+      return "${_getMonthName(parsed.month)} ${parsed.year}";
+    } catch (_) {
+      // Try 'dd-MMM-yyyy' or 'dd/MM/yyyy'
+      try {
+        final parsed2 = DateFormat('dd-MMM-yyyy').parse(input);
+        return "${_getMonthName(parsed2.month)} ${parsed2.year}";
+      } catch (_) {}
+      try {
+        final parsed3 = DateFormat('dd/MM/yyyy').parse(input);
+        return "${_getMonthName(parsed3.month)} ${parsed3.year}";
+      } catch (_) {}
+      // If the input is already like "February 2026" or can't be parsed, return it
+      return input;
     }
   }
 
@@ -106,6 +128,7 @@ class RevisedOfferLetterPdfService {
     required String ctc,
     required String doj, // yyyy-mm-dd
     required String signdate, // yyyy-mm-dd
+    required String salaryFrom, // NEW: effective salary from date (e.g. "2026-02-01" or "February 2026")
     required RevisedPdfContentModel content,
   }) async {
     final pdf = pw.Document();
@@ -182,6 +205,7 @@ class RevisedOfferLetterPdfService {
     final monthYear = "${_getMonthName(now.month)} ${now.year}";
     final formattedDoj = _formatDateString(doj);
     final formattedSigndate = _formatDateString(signdate);
+    final formattedSalaryFrom = _formatToMonthYear(salaryFrom);
 
     String stipendFormatted;
     try {
@@ -285,32 +309,30 @@ class RevisedOfferLetterPdfService {
           style: bodyStyle,
           children:
               _buildTextSpans(content.positionBody, bodyStyle, boldStyle, {
-                '{fromposition}': fromposition,
-                '{position}': position,
-                '{doj}': formattedDoj,
-              }),
+            '{fromposition}': fromposition,
+            '{position}': position,
+            '{doj}': formattedDoj,
+          }),
         ),
       ),
       pw.SizedBox(height: 12),
       pw.Text(content.compensationTitle, style: headingStyle),
       pw.SizedBox(height: 6),
+
+      // Use the generic placeholder builder so we can support {stipend}, {ctc}, and {salaryFrom}
       pw.RichText(
         textAlign: pw.TextAlign.justify,
         text: pw.TextSpan(
           style: bodyStyle,
-          children: [
-            pw.TextSpan(text: content.compensationBody.split('{stipend}')[0]),
-            pw.TextSpan(text: "Rs. $stipendFormatted/-", style: boldStyle),
-            pw.TextSpan(
-              text: content.compensationBody
-                  .split('{stipend}')[1]
-                  .split('{ctc}')[0],
-            ),
-            pw.TextSpan(text: ctc, style: boldStyle),
-            pw.TextSpan(text: content.compensationBody.split('{ctc}')[1]),
-          ],
+          children: _buildTextSpans(content.compensationBody, bodyStyle,
+              boldStyle, {
+            '{stipend}': "Rs. $stipendFormatted/-",
+            '{ctc}': ctc,
+            '{salaryFrom}': formattedSalaryFrom,
+          }),
         ),
       ),
+
       pw.SizedBox(height: 12),
       pw.Text(content.confidentialityTitle, style: headingStyle),
       pw.SizedBox(height: 6),
@@ -492,111 +514,134 @@ class RevisedOfferLetterPdfService {
     pdf.addPage(buildTemplatePage(page3));
 
     // ---------------- PAGE 4 ----------------
-// ---------------- PAGE 4 ----------------
-final page4 = <pw.Widget>[
-  pw.SizedBox(height: 12),
-  pw.Text(content.preEmploymentScreeningTitle, style: headingStyle),
-  pw.SizedBox(height: 6),
-  pw.Paragraph(
-    text: content.preEmploymentScreeningBody,
-    style: bodyStyle,
-    textAlign: pw.TextAlign.justify,
-  ),
+    final page4 = <pw.Widget>[
+      pw.SizedBox(height: 12),
+      pw.Text(content.preEmploymentScreeningTitle, style: headingStyle),
+      pw.SizedBox(height: 6),
+      pw.Paragraph(
+        text: content.preEmploymentScreeningBody,
+        style: bodyStyle,
+        textAlign: pw.TextAlign.justify,
+      ),
 
-  pw.Text(content.disputeTitle, style: headingStyle),
-  pw.SizedBox(height: 6),
-  pw.Paragraph(
-    text: content.disputeBody,
-    style: bodyStyle,
-    textAlign: pw.TextAlign.justify,
-  ),
-  pw.SizedBox(height: 6),
-  pw.Text(content.declarationTitle, style: headingStyle),
-  pw.SizedBox(height: 6),
-  pw.Paragraph(
-    text: content.declarationBody,
-    style: bodyStyle,
-    textAlign: pw.TextAlign.justify,
-  ),
-  pw.SizedBox(height: 0),
-  pw.Paragraph(
-    text:
-        "Please sign below as a confirmation of your acceptance and return it to the undersigned by $formattedSigndate.",
-    style: bodyStyle,
-    textAlign: pw.TextAlign.justify,
-  ),
+      pw.Text(content.disputeTitle, style: headingStyle),
+      pw.SizedBox(height: 6),
+      pw.Paragraph(
+        text: content.disputeBody,
+        style: bodyStyle,
+        textAlign: pw.TextAlign.justify,
+      ),
+      pw.SizedBox(height: 6),
+      pw.Text(content.declarationTitle, style: headingStyle),
+      pw.SizedBox(height: 6),
+      pw.Paragraph(
+        text: content.declarationBody,
+        style: bodyStyle,
+        textAlign: pw.TextAlign.justify,
+      ),
+      pw.SizedBox(height: 0),
+      pw.Paragraph(
+        text:
+            "Please sign below as a confirmation of your acceptance and return it to the undersigned by $formattedSigndate.",
+        style: bodyStyle,
+        textAlign: pw.TextAlign.justify,
+      ),
 
-  // instead of a single full Spacer, use a small top spacer
-  pw.Spacer(flex: 1),
+      // instead of a single full Spacer, use a small top spacer
+      pw.Spacer(flex: 1),
 
-  // signature / acceptance row — aligned to the bottom
- pw.Row(
-  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-  crossAxisAlignment: pw.CrossAxisAlignment.end,
-  children: [
-    // ================= LEFT (HR / COMPANY) =================
-    pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      mainAxisSize: pw.MainAxisSize.min,
-      children: [
-        pw.Text("For ZeAI Soft,", style: boldStyle),
-        pw.SizedBox(height: 2),
+      // signature / acceptance row — aligned to the bottom
+      pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: pw.CrossAxisAlignment.end,
+        children: [
+          // Left block (HR) - left aligned
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            mainAxisSize: pw.MainAxisSize.min,
+            children: [
+              pw.Text("For ZeAI Soft,", style: boldStyle),
+              pw.SizedBox(height: 6),
 
-        if (signatureImage != null)
-          pw.Container(
-            height: 50,
-            child: pw.Image(
-              signatureImage,
-              width: 180,
-              fit: pw.BoxFit.contain,
-            ),
-          )
-        else
-          pw.Container(height: 50),
+              // Container holds the signature and the underline (stacked)
+              pw.Container(
+                height: 90, // slightly reduced if you want
+                width: 280, // signatureWidth
+                child: pw.Stack(
+                  children: [
+                    if (signatureImage != null)
+                      pw.Positioned(
+                        left: 0,
+                        top: 0,
+                        child: pw.Image(
+                          signatureImage,
+                          width: 280,
+                          height: 90,
+                          fit: pw.BoxFit.contain,
+                        ),
+                      )
+                    else
+                      pw.Positioned(
+                        left: 0,
+                        top: 0,
+                        child: pw.SizedBox(height: 90, width: 280),
+                      ),
 
-        pw.SizedBox(height: 6),
-        pw.Text("____________________", style: boldStyle),
-        pw.SizedBox(height: 6),
-        pw.Text("Hari Baskaran", style: boldStyle),
-        pw.Text(
-          "Co-Founder & Chief Technology Officer",
-          style: smallItalicStyle,
-        ),
-      ],
-    ),
+                    pw.Positioned(
+                      left: 0,
+                      top: 68, // tune this if underline overlaps signature differently
+                      child: pw.Text("__________________", style: boldStyle),
+                    ),
+                  ],
+                ),
+              ),
 
-    // ================= RIGHT (CANDIDATE) =================
-    pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.end,
-      mainAxisSize: pw.MainAxisSize.min,
-      children: [
-        pw.Text("To ZeAI Soft,", style: boldStyle),
+              pw.SizedBox(height: 2),
+              pw.Text("Hari Baskaran", style: boldStyle),
+              pw.Text(
+                "Co-Founder & Chief Technology Officer",
+                style: smallItalicStyle,
+              ),
+            ],
+          ),
 
-        // IMPORTANT: spacer equals signature height
-        pw.SizedBox(height: 52),
+          // Right block (Candidate) - RIGHT aligned
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            mainAxisSize: pw.MainAxisSize.min,
+            children: [
+              pw.Text("To ZeAI Soft,", style: boldStyle),
 
-        pw.Text("_____________________", style: boldStyle),
-        pw.SizedBox(height: 6),
-        pw.Text(fullName, style: boldStyle),
-        pw.Text(position, style: smallItalicStyle),
-      ],
-    ),
-  ],
-),
+              // reduced gap here so the right-side underline aligns higher
+              pw.SizedBox(height: 70), // was 68 — lower it to lift candidate block up
+              pw.Text("___________________", style: boldStyle),
+              pw.SizedBox(height: 14),
+              pw.Text(
+                fullName,
+                style: boldStyle,
+                textAlign: pw.TextAlign.right,
+              ),
+              pw.Text(
+                position,
+                style: smallItalicStyle,
+                textAlign: pw.TextAlign.right,
+              ),
+            ],
+          ),
+        ],
+      ),
 
-  
+      pw.SizedBox(height: 1),
 
-  pw.SizedBox(height: 1),
+      // increase bottom flex so signature moves up (more empty space below)
+      pw.Spacer(flex: 4),
+    ];
 
-  // increase bottom flex so signature moves up (more empty space below)
-  pw.Spacer(flex: 4),
-];
+    pdf.addPage(buildTemplatePage(page4));
 
-
-pdf.addPage(buildTemplatePage(page4));
-
-return pdf.save();
+    return pdf.save();
   }
+
   List<pw.TextSpan> _buildTextSpans(
     String template,
     pw.TextStyle defaultStyle,
@@ -626,7 +671,7 @@ return pdf.save();
     }
 
     if (lastMatchEnd < template.length) {
-      spans.add(pw.TextSpan(text: template.substring(lastMatchEnd)));
+      spans.add(pw.TextSpan(text: template.substring(lastMatchEnd), style: defaultStyle));
     }
 
     return spans;

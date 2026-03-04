@@ -1,5 +1,3 @@
-//super admindashboard.dart
-
 // lib/super_admin_dashboard.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,14 +10,16 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_picker/file_picker.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:intl/intl.dart';
+import 'package:excel/excel.dart';
 
 import 'user_provider.dart';
 import 'sidebar.dart';
 import 'apply_leave.dart';
 import 'todo_planner.dart';
-import 'emp_payroll.dart';
+// import 'emp_payroll.dart';
+import 'payslip.dart';
 import 'company_events.dart';
-import 'admin_notification.dart';
+// import 'admin_notification.dart';
 import 'attendance_login.dart';
 import 'event_banner_slider.dart';
 import 'leave_approval.dart';
@@ -28,8 +28,11 @@ import 'superadmin_performance.dart'; // ✅ for SuperadminPerformancePageReview
 import 'employee_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'recruitment.dart';
-import 'mail.dart';
-
+import 'mail_dashboard.dart';
+import 'attendance_list.dart';
+import 'holiday_master_screen.dart';
+import 'superadmin_notification.dart';
+import 'admin_payslip_viewer.dart';
 
 class SuperAdminDashboard extends StatefulWidget {
   const SuperAdminDashboard({super.key});
@@ -49,6 +52,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   int sickTotal = 0;
   int sadUsed = 0;
   int sadTotal = 0;
+  int _mailCount = 0;
 
   // For mobile (File)
   File? _pickedImageFile;
@@ -64,14 +68,37 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     super.initState();
     // fetchEmployeeName depends on Provider; call in initState but safe (we check for null inside).
     fetchEmployeeName();
+    _fetchMailCount();
+    _fetchNotificationCount();
     // remove duplicate fetchPendingCount call — UI uses FutureBuilder to fetch it.
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _fetchMailCount();
     // Refresh balances when dashboard is revisited
     _fetchLeaveBalance();
+    _fetchNotificationCount();
+  }
+
+  int _notificationCount = 0; // ✅ New state variable
+
+  Future<void> _fetchNotificationCount() async {
+    final employeeId = Provider.of<UserProvider>(
+      context,
+      listen: false,
+    ).employeeId;
+    if (employeeId == null) return;
+
+    final res = await http.get(
+      Uri.parse("https://company-04bz.onrender.com/notifications/unread-count/$employeeId"),
+    );
+
+    if (res.statusCode == 200 && mounted) {
+      final data = jsonDecode(res.body);
+      setState(() => _notificationCount = data["count"] ?? 0);
+    }
   }
 
   /// Fetch employee name from backend.
@@ -89,7 +116,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     }
 
     try {
-      final uri = Uri.parse("http://localhost:5000/api/employees/$employeeId");
+      final uri = Uri.parse("https://company-04bz.onrender.com/api/employees/$employeeId");
       final resp = await http.get(uri);
 
       if (resp.statusCode == 200) {
@@ -125,7 +152,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 
       final year = DateTime.now().year;
       final url =
-          "http://localhost:5000/apply/leave-balance/$employeeId?year=$year";
+          "https://company-04bz.onrender.com/apply/leave-balance/$employeeId?year=$year";
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
@@ -163,7 +190,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       final response = await http.get(
         Uri.parse(
           // Pass both role and ID to the backend
-          "http://localhost:5000/apply/pending-count?approver=$userRole&approverId=$employeeId",
+          "https://company-04bz.onrender.com/apply/pending-count?approver=$userRole&approverId=$employeeId",
         ),
       );
 
@@ -180,11 +207,63 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     }
   }
 
+  /// Fetch pending change-request count for the current approverRole
+  Future<int> fetchRequestPendingCount(String approverRole) async {
+    try {
+      final uri = Uri.parse(
+        "https://company-04bz.onrender.com/requests/count?approverRole=$approverRole&status=pending",
+      );
+      final response = await http.get(uri);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data['pendingCount'] ?? 0;
+      } else {
+        debugPrint(
+          "❌ Failed to fetch request pending count: ${response.statusCode}",
+        );
+        return 0;
+      }
+    } catch (e) {
+      debugPrint("❌ Error fetching request pending count: $e");
+      return 0;
+    }
+  }
+
+  Future<void> _fetchMailCount() async {
+    final employeeId = Provider.of<UserProvider>(
+      context,
+      listen: false,
+    ).employeeId;
+    if (employeeId == null) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse(
+          'https://company-04bz.onrender.com/api/mail/pending-count?employeeId=$employeeId',
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            _mailCount = data['pendingCount'] ?? 0;
+          });
+        }
+      } else {
+        print('❌ Failed to fetch mail count: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error fetching mail count: $e');
+    }
+  }
+
   /// Delete employee comment
   Future<void> _deleteEmployeeComment(String id) async {
     try {
       final response = await http.delete(
-        Uri.parse("http://localhost:5000/review-decision/$id"),
+        Uri.parse("https://company-04bz.onrender.com/review-decision/$id"),
       );
 
       if (response.statusCode == 200) {
@@ -211,7 +290,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
   Future<void> _showEmployeeComments() async {
     try {
       final response = await http.get(
-        Uri.parse("http://localhost:5000/review-decision"),
+        Uri.parse("https://company-04bz.onrender.com/review-decision"),
         headers: {"Accept": "application/json"},
       );
 
@@ -326,293 +405,433 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
     final nameController = TextEditingController();
     final positionController = TextEditingController();
     final domainController = TextEditingController();
+    final passwordController = TextEditingController();
     final imageController = TextEditingController();
+    final dojController = TextEditingController();
+    final workEmailController = TextEditingController();
 
     showDialog(
       context: context,
-      builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 60),
-        child: Container(
-          width: 420,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF873AB7), Color(0xFF673AB7)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: Center(
-            child: Container(
-              margin: const EdgeInsets.all(20),
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      "Add New Employee",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
+      barrierDismissible: true,
+      builder: (_) {
+        bool obscure = true;
 
-                    // Image Picker
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: imageController,
-                            readOnly: true,
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Dialog(
+              //builder: (_) => Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 40,
+                vertical: 60,
+              ),
+              child: Container(
+                width: 420,
+                height: 620, // 🔴 increased height for import button
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF873AB7), Color(0xFF673AB7)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Center(
+                  child: Container(
+                    margin: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            "Add New Employee",
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          //const SizedBox(height: 18),
+                          const SizedBox(height: 10),
+
+                          // Image Picker
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: imageController,
+                                  readOnly: true,
+                                  decoration: const InputDecoration(
+                                    labelText: "Profile Image (.jpg)",
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                              ),
+                              //const SizedBox(width: 10),
+                              const SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: () async {
+                                  if (kIsWeb) {
+                                    // Web: pick file as bytes
+                                    final result = await FilePicker.platform
+                                        .pickFiles(
+                                          type: FileType.custom,
+                                          allowedExtensions: ['jpg', 'jpeg'],
+                                          withData: true,
+                                        );
+                                    if (result != null &&
+                                        result.files.single.bytes != null) {
+                                      setState(() {
+                                        _pickedImageBytes =
+                                            result.files.single.bytes;
+                                        // lowercase extension to satisfy Multer
+                                        _pickedFileName = result
+                                            .files
+                                            .single
+                                            .name
+                                            .toLowerCase();
+                                        imageController.text = _pickedFileName!;
+                                      });
+                                    }
+                                  } else {
+                                    // Mobile: pick image from gallery
+                                    final picked = await _picker.pickImage(
+                                      source: ImageSource.gallery,
+                                    );
+                                    if (picked != null) {
+                                      final lower = picked.path.toLowerCase();
+                                      if (lower.endsWith('.jpg') ||
+                                          lower.endsWith('.jpeg')) {
+                                        setState(() {
+                                          _pickedImageFile = File(picked.path);
+                                          _pickedFileName = picked.name
+                                              .toLowerCase();
+                                          imageController.text = picked.name;
+                                        });
+                                      } else {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              "⚠ Please select a .jpg image only",
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  }
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.deepPurple,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text("Browse"),
+                              ),
+                            ],
+                          ),
+                          //const SizedBox(height: 16),
+                          const SizedBox(height: 14),
+
+                          // Employee ID
+                          TextField(
+                            controller: idController,
                             decoration: const InputDecoration(
-                              labelText: "Profile Image (.jpg)",
+                              labelText: "Employee ID",
                               border: OutlineInputBorder(),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        ElevatedButton(
-                          onPressed: () async {
-                            if (kIsWeb) {
-                              // Web: pick file as bytes
-                              final result = await FilePicker.platform
-                                  .pickFiles(
-                                    type: FileType.custom,
-                                    allowedExtensions: ['jpg', 'jpeg'],
-                                    withData: true,
-                                  );
-                              if (result != null &&
-                                  result.files.single.bytes != null) {
-                                setState(() {
-                                  _pickedImageBytes = result.files.single.bytes;
-                                  // lowercase extension to satisfy Multer
-                                  _pickedFileName = result.files.single.name
-                                      .toLowerCase();
-                                  imageController.text = _pickedFileName!;
-                                });
-                              }
-                            } else {
-                              // Mobile: pick image from gallery
-                              final picked = await _picker.pickImage(
-                                source: ImageSource.gallery,
+                          //const SizedBox(height: 12),
+                          const SizedBox(height: 10),
+
+                          // Employee Name
+                          TextField(
+                            controller: nameController,
+                            decoration: const InputDecoration(
+                              labelText: "Employee Name",
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          //const SizedBox(height: 12),
+                          const SizedBox(height: 10),
+
+                          // Position
+                          TextField(
+                            controller: positionController,
+                            decoration: const InputDecoration(
+                              labelText: "Position",
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          //const SizedBox(height: 12),
+                          const SizedBox(height: 10),
+
+                          // Domain
+                          TextField(
+                            controller: domainController,
+                            decoration: const InputDecoration(
+                              labelText: "Domain",
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          //const SizedBox(height: 18),
+                          const SizedBox(height: 10),
+
+                          // Date of Joining (Optional)
+                          TextField(
+                            controller: dojController,
+                            readOnly: true,
+                            decoration: const InputDecoration(
+                              labelText: "Date of Joining (Optional)",
+                              border: OutlineInputBorder(),
+                              suffixIcon: Icon(Icons.calendar_today),
+                            ),
+                            onTap: () async {
+                              DateTime? pickedDate = await showDatePicker(
+                                context: context,
+                                initialDate: DateTime.now(),
+                                firstDate: DateTime(2000),
+                                lastDate: DateTime(2100),
                               );
-                              if (picked != null) {
-                                final lower = picked.path.toLowerCase();
-                                if (lower.endsWith('.jpg') ||
-                                    lower.endsWith('.jpeg')) {
+                              if (pickedDate != null) {
+                                String formattedDate = DateFormat('dd-MM-yyyy').format(pickedDate);
+                                setState(() => dojController.text = formattedDate);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Work Email (Optional)
+                          TextField(
+                            controller: workEmailController,
+                            decoration: const InputDecoration(
+                              labelText: "Work Email (Optional)",
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+
+                          // Password (new) - obscured with toggle
+                          TextField(
+                            controller: passwordController,
+                            obscureText: obscure,
+                            decoration: InputDecoration(
+                              labelText: "Password",
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  obscure
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                ),
+                                onPressed: () {
                                   setState(() {
-                                    _pickedImageFile = File(picked.path);
-                                    _pickedFileName = picked.name.toLowerCase();
-                                    imageController.text = picked.name;
+                                    obscure = !obscure;
                                   });
-                                } else {
+                                },
+                              ),
+                            ),
+                          ),
+                          //const SizedBox(height: 18),
+                          const SizedBox(height: 16),
+
+                          // Submit Button
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.deepPurple,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              onPressed: () async {
+                                final empId = idController.text.trim();
+                                final name = nameController.text.trim();
+                                final position = positionController.text.trim();
+                                final domain = domainController.text.trim();
+                                final password = passwordController.text.trim();
+
+                                if (empId.isEmpty ||
+                                    name.isEmpty ||
+                                    position.isEmpty ||
+                                    domain.isEmpty ||
+                                    password.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("⚠ Please fill all fields"),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                if (password.length < 6) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text(
-                                        "⚠ Please select a .jpg image only",
+                                        "⚠ Password should be at least 6 characters",
                                       ),
                                     ),
                                   );
+                                  return;
                                 }
-                              }
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.deepPurple,
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text("Browse"),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
 
-                    // Employee ID
-                    TextField(
-                      controller: idController,
-                      decoration: const InputDecoration(
-                        labelText: "Employee ID",
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                                try {
+                                  var request = http.MultipartRequest(
+                                    'POST',
+                                    Uri.parse(
+                                      "https://company-04bz.onrender.com/api/employees",
+                                    ),
+                                  );
 
-                    // Employee Name
-                    TextField(
-                      controller: nameController,
-                      decoration: const InputDecoration(
-                        labelText: "Employee Name",
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                                  request.fields['employeeId'] = empId;
+                                  request.fields['employeeName'] = name;
+                                  request.fields['position'] = position;
+                                  request.fields['domain'] = domain;
+                                  request.fields['password'] =
+                                      password; // <-- new
 
-                    // Position
-                    TextField(
-                      controller: positionController,
-                      decoration: const InputDecoration(
-                        labelText: "Position",
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                                  // Optional fields
+                                  if (dojController.text.isNotEmpty) {
+                                    request.fields['dateOfAppointment'] = dojController.text.trim();
+                                  }
+                                  if (workEmailController.text.isNotEmpty) {
+                                    request.fields['workEmail'] = workEmailController.text.trim();
+                                  }
 
-                    // Domain
-                    TextField(
-                      controller: domainController,
-                      decoration: const InputDecoration(
-                        labelText: "Domain",
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
+                                  if (kIsWeb && _pickedImageBytes != null) {
+                                    request.files.add(
+                                      http.MultipartFile.fromBytes(
+                                        'employeeImage',
+                                        _pickedImageBytes!,
+                                        filename:
+                                            _pickedFileName ?? 'upload.jpg',
+                                        contentType: MediaType(
+                                          'image',
+                                          'jpeg',
+                                        ), // Multer safe
+                                      ),
+                                    );
+                                  } else if (!kIsWeb &&
+                                      _pickedImageFile != null) {
+                                    request.files.add(
+                                      await http.MultipartFile.fromPath(
+                                        'employeeImage',
+                                        _pickedImageFile!.path,
+                                        filename:
+                                            _pickedFileName ??
+                                            _pickedImageFile!.path
+                                                .split('/')
+                                                .last,
+                                      ),
+                                    );
+                                  }
 
-                    // Submit Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.deepPurple,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: () async {
-                          final empId = idController.text.trim();
-                          final name = nameController.text.trim();
-                          final position = positionController.text.trim();
-                          final domain = domainController.text.trim();
+                                  final streamedResponse = await request.send();
+                                  final response = await http
+                                      .Response.fromStream(streamedResponse);
 
-                          if (empId.isEmpty ||
-                              name.isEmpty ||
-                              position.isEmpty ||
-                              domain.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text("⚠ Please fill all fields"),
-                              ),
-                            );
-                            return;
-                          }
+                                  if (response.statusCode == 200 ||
+                                      response.statusCode == 201) {
+                                    _clearPickedImage();
+                                    imageController.clear();
+                                    idController.clear();
+                                    nameController.clear();
+                                    positionController.clear();
+                                    domainController.clear();
+                                    passwordController.clear();
+                                    dojController.clear();
+                                    workEmailController.clear();
 
-                          if (_pickedImageBytes == null &&
-                              _pickedImageFile == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "⚠ Please select a .jpg file to upload",
-                                ),
-                              ),
-                            );
-                            return;
-                          }
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          "✅ Employee added successfully!",
+                                        ),
+                                      ),
+                                    );
+                                    Navigator.pop(context);
 
-                          try {
-                            var request = http.MultipartRequest(
-                              'POST',
-                              Uri.parse("http://localhost:5000/api/employees"),
-                            );
-
-                            request.fields['employeeId'] = empId;
-                            request.fields['employeeName'] = name;
-                            request.fields['position'] = position;
-                            request.fields['domain'] = domain;
-
-                            if (kIsWeb && _pickedImageBytes != null) {
-                              request.files.add(
-                                http.MultipartFile.fromBytes(
-                                  'employeeImage',
-                                  _pickedImageBytes!,
-                                  filename: _pickedFileName ?? 'upload.jpg',
-                                  contentType: MediaType(
-                                    'image',
-                                    'jpeg',
-                                  ), // Multer safe
-                                ),
-                              );
-                            } else if (!kIsWeb && _pickedImageFile != null) {
-                              request.files.add(
-                                await http.MultipartFile.fromPath(
-                                  'employeeImage',
-                                  _pickedImageFile!.path,
-                                  filename:
-                                      _pickedFileName ??
-                                      _pickedImageFile!.path.split('/').last,
-                                ),
-                              );
-                            }
-
-                            final streamedResponse = await request.send();
-                            final response = await http.Response.fromStream(
-                              streamedResponse,
-                            );
-
-                            if (response.statusCode == 200 ||
-                                response.statusCode == 201) {
-                              _clearPickedImage();
-                              imageController.clear();
-                              idController.clear();
-                              nameController.clear();
-                              positionController.clear();
-                              domainController.clear();
-
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    "✅ Employee added successfully!",
-                                  ),
-                                ),
-                              );
-                              Navigator.pop(context);
-
-                              // Refresh Employee List
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const EmployeeListScreen(),
-                                ),
-                              );
-                            } else {
-                              String msg = "❌ Failed: ${response.statusCode}";
-                              try {
-                                final body = jsonDecode(response.body);
-                                if (body is Map && body['message'] != null) {
-                                  msg = body['message'];
+                                    // Refresh Employee List
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            const EmployeeListScreen(),
+                                      ),
+                                    );
+                                  } else {
+                                    String msg =
+                                        "❌ Failed: ${response.statusCode}";
+                                    try {
+                                      final body = jsonDecode(response.body);
+                                      if (body is Map &&
+                                          body['message'] != null) {
+                                        msg = body['message'];
+                                      }
+                                    } catch (_) {}
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(msg)),
+                                    );
+                                  }
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text("❌ Error: $e")),
+                                  );
                                 }
-                              } catch (_) {}
-                              ScaffoldMessenger.of(
-                                context,
-                              ).showSnackBar(SnackBar(content: Text(msg)));
-                            }
-                          } catch (e) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("❌ Error: $e")),
-                            );
-                          }
-                        },
-                        child: const Text(
-                          "Add Employee",
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
+                              },
+                              child: const Text(
+                                "Add Employee",
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Divider(),
+                          const SizedBox(height: 4),
+                          Text(
+                            "OR",
+                            style: TextStyle(color: Colors.grey.shade700),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 4),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.upload_file),
+                              label: const Text("Import from Excel"),
+                              onPressed: () {
+                                Navigator.of(context).pop(); // Close manual add dialog
+                                _importEmployeesFromExcel();
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.deepPurple,
+                                side: const BorderSide(color: Colors.deepPurple),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ),
-          ),
-        ),
-      ),
+            );
+          },
+        );
+      },
     ).then((_) {
       _clearPickedImage();
       imageController.clear();
@@ -620,26 +839,173 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       nameController.clear();
       positionController.clear();
       domainController.clear();
+      dojController.clear();
+      workEmailController.clear();
     });
   }
 
- 
-  /// Helper: format date in YYYY-MM-DD hh:mm with zero padding
-String _formatDate(dynamic iso) {
-  if (iso == null) return 'N/A';
-  try {
-    final dt = DateTime.parse(iso.toString()).toLocal();
-    return DateFormat('yyyy-MM-dd hh:mm a').format(dt); // 2025-10-03 12:09 PM
-  } catch (_) {
-    return iso.toString();
+  /// 🔹 Handles the entire Excel import flow
+  Future<void> _importEmployeesFromExcel() async {
+    // 1. Pick Excel file
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx', 'xls'],
+      withData: true, // Necessary to get file bytes on web
+    );
+
+    if (result == null || result.files.single.bytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No file selected or file is empty.")),
+      );
+      return;
+    }
+
+    var bytes = result.files.single.bytes!;
+    var excel = Excel.decodeBytes(bytes);
+
+    // 2. Let user select a sheet
+    String? selectedSheet = await _showSheetSelectionDialog(excel.tables.keys.toList());
+
+    if (selectedSheet == null) return; // User cancelled
+
+    var sheet = excel.tables[selectedSheet]!;
+    if (sheet.maxRows < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Sheet is empty or has only a header row.")),
+      );
+      return;
+    }
+
+    // 3. Process sheet data
+    var headerRow = sheet.rows.first;
+    Map<String, int> headerMap = {};
+    for (var i = 0; i < headerRow.length; i++) {
+      final cell = headerRow[i];
+      if (cell != null && cell.value != null) {
+        headerMap[cell.value.toString().trim().toLowerCase()] = i;
+      }
+    }
+
+    // Check for mandatory headers
+    final mandatoryHeaders = ['employee id', 'employee name', 'position', 'domain', 'password'];
+    if (!headerMap.keys.toSet().containsAll(mandatoryHeaders)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Missing mandatory headers: employee id, employee name, position, domain, password.")),
+      );
+      return;
+    }
+
+    List<Map<String, dynamic>> employeesToCreate = [];
+    for (var i = 1; i < sheet.maxRows; i++) {
+      var row = sheet.rows[i];
+      Map<String, dynamic> employee = {};
+
+      dynamic getCellValue(String headerName) {
+        if (headerMap.containsKey(headerName)) {
+          int colIndex = headerMap[headerName]!;
+          if (colIndex < row.length && row[colIndex] != null) {
+            return row[colIndex]!.value;
+          }
+        }
+        return null;
+      }
+
+      employee['employeeId'] = getCellValue('employee id')?.toString();
+      employee['employeeName'] = getCellValue('employee name')?.toString();
+      employee['position'] = getCellValue('position')?.toString();
+      employee['domain'] = getCellValue('domain')?.toString();
+      employee['password'] = getCellValue('password')?.toString();
+      employee['workEmail'] = getCellValue('work email')?.toString();
+
+      var doj = getCellValue('date of joining');
+      if (doj is double) { // Excel date serial number
+        final date = DateTime(1899, 12, 30).add(Duration(days: doj.toInt()));
+        employee['dateOfAppointment'] = DateFormat('yyyy-MM-dd').format(date);
+      } else if (doj != null) {
+        employee['dateOfAppointment'] = doj.toString();
+      }
+
+      if (employee['employeeId'] != null && employee['employeeName'] != null) {
+        employeesToCreate.add(employee);
+      }
+    }
+
+    if (employeesToCreate.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No valid employee data found in the selected sheet.")),
+      );
+      return;
+    }
+
+    // 4. Send to backend
+    try {
+      final response = await http.post(
+        Uri.parse("https://company-04bz.onrender.com/api/employees/bulk"),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(employeesToCreate),
+      );
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Import complete. Success: ${result['successCount']}, Failures: ${result['failureCount']}. Errors: ${result['errors'].join(', ')}"),
+            duration: const Duration(seconds: 8),
+          ),
+        );
+        // Refresh employee list by navigating to it
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const EmployeeListScreen()));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Import failed: ${response.body}")));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error during import: $e")));
+    }
   }
-}
+
+  /// 🔹 Shows a dialog for the user to pick a sheet from the Excel file
+  Future<String?> _showSheetSelectionDialog(List<String> sheetNames) async {
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Select a Sheet to Import'),
+          content: SizedBox(
+            width: double.minPositive,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: sheetNames.length,
+              itemBuilder: (BuildContext context, int index) {
+                return ListTile(title: Text(sheetNames[index]), onTap: () => Navigator.of(context).pop(sheetNames[index]));
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Helper: format date in YYYY-MM-DD hh:mm with zero padding
+  String _formatDate(dynamic iso) {
+    if (iso == null) return 'N/A';
+    try {
+      final dt = DateTime.parse(iso.toString()).toLocal();
+      return DateFormat('yyyy-MM-dd hh:mm a').format(dt); // 2025-10-03 12:09 PM
+    } catch (_) {
+      return iso.toString();
+    }
+  }
 
   /// 🔹 Fetch pending change requests
-  Future<List<dynamic>> _fetchPendingRequests() async {
+  /// 🔹 Fetch pending change requests (optionally filtered by approverRole)
+  Future<List<dynamic>> _fetchPendingRequests({String? approverRole}) async {
     try {
+      String url = "https://company-04bz.onrender.com/requests?status=pending";
+      if (approverRole != null && approverRole.isNotEmpty) {
+        url += "&approverRole=$approverRole";
+      }
       final response = await http.get(
-        Uri.parse("http://localhost:5000/requests?status=pending"),
+        Uri.parse(url),
         headers: {"Accept": "application/json"},
       );
       if (response.statusCode == 200) {
@@ -654,7 +1020,7 @@ String _formatDate(dynamic iso) {
   Future<void> _approveRequest(String requestId) async {
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:5000/requests/$requestId/approve'),
+        Uri.parse('https://company-04bz.onrender.com/requests/$requestId/approve'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'resolvedBy':
@@ -679,7 +1045,7 @@ String _formatDate(dynamic iso) {
   Future<void> _declineRequest(String requestId) async {
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:5000/requests/$requestId/decline'),
+        Uri.parse('https://company-04bz.onrender.com/requests/$requestId/decline'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'resolvedBy':
@@ -702,7 +1068,17 @@ String _formatDate(dynamic iso) {
   }
 
   Future<void> _showChangeRequests() async {
-    final requests = await _fetchPendingRequests();
+    final role =
+        Provider.of<UserProvider>(
+          context,
+          listen: false,
+        ).position?.toLowerCase() ??
+        'founder';
+    // map UI roles to our backend approverRole values
+    final approverRole = (role == 'hr')
+        ? 'hr'
+        : (role == 'founder' ? 'founder' : 'hr');
+    final requests = await _fetchPendingRequests(approverRole: approverRole);
 
     showDialog(
       context: context,
@@ -846,13 +1222,11 @@ String _formatDate(dynamic iso) {
         : "employee";
 
     return Center(
-      child: Wrap(  
+      child: Wrap(
         spacing: 90,
         runSpacing: 20,
         alignment: WrapAlignment.center,
         children: [
-
-           
           _quickActionButton('Apply Leave', () {
             Navigator.push(
               context,
@@ -862,7 +1236,7 @@ String _formatDate(dynamic iso) {
           _quickActionButton('Download Payslip', () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const EmpPayroll()),
+              MaterialPageRoute(builder: (_) => const PayslipScreen()),
             );
           }),
           _quickActionButton('Mark Attendance', () {
@@ -871,27 +1245,81 @@ String _formatDate(dynamic iso) {
               MaterialPageRoute(builder: (_) => const AttendanceLoginPage()),
             );
           }),
-            _quickActionButton('Mail', () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MailDashboard()),
-            );
-          }),
-          _quickActionButton('Notifications Preview', () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AdminNotificationsPage(
-                  empId:
-                      Provider.of<UserProvider>(
-                        context,
-                        listen: false,
-                      ).employeeId ??
-                      '',
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _quickActionButton('Mail', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MailDashboard()),
+                ).then((_) => _fetchMailCount());
+              }),
+              if (_mailCount > 0)
+                Positioned(
+                  right: -10,
+                  top: -10,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '$_mailCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            );
-          }),
+            ],
+          ),
+          // ✅ Notifications Preview with Badge logic
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _quickActionButton('Notifications Preview', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SuperadminNotificationsPage(
+                      empId:
+                          Provider.of<UserProvider>(
+                            context,
+                            listen: false,
+                          ).employeeId ??
+                          '',
+                    ),
+                  ),
+                ).then((_) {
+                  // This triggers when you come BACK to the dashboard
+                  _fetchNotificationCount();
+                });
+              }),
+              if (_notificationCount > 0)
+                Positioned(
+                  right: -8,
+                  top: -8,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '$_notificationCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
           _quickActionButton('Performance Review', () {
             final userProvider = Provider.of<UserProvider>(
               context,
@@ -907,7 +1335,49 @@ String _formatDate(dynamic iso) {
             );
           }),
           _quickActionButton('Employee Feedback', _showEmployeeComments),
-          _quickActionButton('Request', _showChangeRequests),
+
+          //_quickActionButton('Request', _showChangeRequests),
+          // 🔹 Request Button with Badge
+          FutureBuilder<int>(
+            future: fetchRequestPendingCount(
+              (Provider.of<UserProvider>(context, listen: false).position ??
+                      'founder')
+                  .toLowerCase(),
+            ),
+            builder: (context, snapshot) {
+              final count = snapshot.data ?? 0;
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  _quickActionButton('Request', () {
+                    _showChangeRequests();
+                  }),
+                  if (count > 0)
+                    Positioned(
+                      right: -10,
+                      top: -10,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          "$count",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+
           _quickActionButton('Company Events', () async {
             final prefs = await SharedPreferences.getInstance();
             final position = prefs.getString('position') ?? '';
@@ -920,11 +1390,31 @@ String _formatDate(dynamic iso) {
             );
           }),
 
+          if (approverRole == 'hr' || approverRole == 'founder')
+            _quickActionButton('View Employee Payslips', () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AdminPayslipViewer()),
+              );
+            }),
+
           _quickActionButton('Add Employee', _showAddEmployeeDialog),
           _quickActionButton('Employee List', () {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const EmployeeListScreen()),
+            );
+          }),
+          _quickActionButton('Attendance List', () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AttendanceListScreen()),
+            );
+          }),
+          _quickActionButton('Holiday Master', () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const HolidayMasterScreen()),
             );
           }),
           _quickActionButton('Recruitment', () {
@@ -983,8 +1473,6 @@ String _formatDate(dynamic iso) {
       ),
     );
   }
-
-  
 
   Widget _quickActionButton(String title, VoidCallback onPressed) {
     return ElevatedButton(

@@ -56,6 +56,11 @@ const attendanceSchema = new mongoose.Schema(
       enum: ["None", "Login", "Logout", "Break"],
       default: "None",
     },
+    attendanceType: {
+      type: String,
+      enum: ["P", "HL", "A"],
+      default: "P", // 🔥 important
+    },
   },
   { timestamps: true } // ✅ createdAt & updatedAt for sorting
 );

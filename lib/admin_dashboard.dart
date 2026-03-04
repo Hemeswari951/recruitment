@@ -9,7 +9,8 @@ import 'user_provider.dart';
 import 'sidebar.dart';
 import 'apply_leave.dart';
 import 'todo_planner.dart';
-import 'emp_payroll.dart';
+// import 'emp_payroll.dart';
+import 'payslip.dart';
 import 'company_events.dart';
 import 'admin_notification.dart';
 import 'attendance_login.dart';
@@ -17,7 +18,7 @@ import 'event_banner_slider.dart';
 import 'leave_approval.dart';
 import 'adminperformance.dart'; // ✅ for Performance Review
 import 'package:intl/intl.dart';
-import 'mail.dart';
+import 'mail_dashboard.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -39,18 +40,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int sadTotal = 0;
 
   int _pendingCount = 0; // ✅ new state for pending requests
+  int _mailCount = 0;
 
   @override
   void initState() {
     super.initState();
     fetchEmployeeName();
     _refreshPendingCount(); // ✅ fetch badge count on load
+    _fetchMailCount();
+    _fetchNotificationCount();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _fetchLeaveBalance(); // refresh balances when dashboard is revisited
+    _fetchMailCount();
+    _fetchNotificationCount();
   }
 
   // ✅ Helper to get employeeId and refresh count
@@ -60,6 +66,25 @@ class _AdminDashboardState extends State<AdminDashboard> {
       listen: false,
     ).employeeId;
     if (employeeId != null) fetchPendingCount("tl", employeeId);
+  }
+
+  int _notificationCount = 0; // ✅ New state variable
+
+  Future<void> _fetchNotificationCount() async {
+    final employeeId = Provider.of<UserProvider>(
+      context,
+      listen: false,
+    ).employeeId;
+    if (employeeId == null) return;
+
+    final res = await http.get(
+      Uri.parse("https://company-04bz.onrender.com/notifications/unread-count/$employeeId"),
+    );
+
+    if (res.statusCode == 200 && mounted) {
+      final data = jsonDecode(res.body);
+      setState(() => _notificationCount = data["count"] ?? 0);
+    }
   }
 
   Future<void> fetchEmployeeName() async {
@@ -72,7 +97,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
     try {
       final response = await http.get(
-        Uri.parse("http://localhost:5000/get-employee-name/$employeeId"),
+        Uri.parse("https://company-04bz.onrender.com/get-employee-name/$employeeId"),
       );
 
       if (response.statusCode == 200) {
@@ -106,7 +131,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
       final year = DateTime.now().year;
       final url =
-          "http://localhost:5000/apply/leave-balance/$employeeId?year=$year";
+          "https://company-04bz.onrender.com/apply/leave-balance/$employeeId?year=$year";
       final response = await http.get(Uri.parse(url));
 
       if (response.statusCode == 200) {
@@ -144,7 +169,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       final response = await http.get(
         Uri.parse(
           // Pass both role and ID to the backend
-          "http://localhost:5000/apply/pending-count?approver=$userRole&approverId=$employeeId",
+          "https://company-04bz.onrender.com/apply/pending-count?approver=$userRole&approverId=$employeeId",
         ),
       );
 
@@ -161,11 +186,40 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  Future<void> _fetchMailCount() async {
+    final employeeId = Provider.of<UserProvider>(
+      context,
+      listen: false,
+    ).employeeId;
+    if (employeeId == null) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse(
+          'https://company-04bz.onrender.com/api/mail/pending-count?employeeId=$employeeId',
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            _mailCount = data['pendingCount'] ?? 0;
+          });
+        }
+      } else {
+        print('❌ Failed to fetch mail count: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error fetching mail count: $e');
+    }
+  }
+
   /// Delete employee comment
   Future<void> _deleteEmployeeComment(String id) async {
     try {
       final response = await http.delete(
-        Uri.parse("http://localhost:5000/review-decision/$id"),
+        Uri.parse("https://company-04bz.onrender.com/review-decision/$id"),
       );
 
       if (response.statusCode == 200) {
@@ -192,7 +246,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     try {
       final response = await http.get(
         Uri.parse(
-          "http://localhost:5000/review-decision/feedback?positions=employee,intern",
+          "https://company-04bz.onrender.com/review-decision/feedback?positions=employee,intern",
         ),
         headers: {"Accept": "application/json"},
       );
@@ -377,7 +431,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           _quickActionButton('Download Payslip', () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const EmpPayroll()),
+              MaterialPageRoute(builder: (_) => const PayslipScreen()),
             );
           }),
           _quickActionButton('Mark Attendance', () {
@@ -386,28 +440,81 @@ class _AdminDashboardState extends State<AdminDashboard> {
               MaterialPageRoute(builder: (_) => const AttendanceLoginPage()),
             );
           }),
-  _quickActionButton('Mail', () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MailDashboard()),
-            );
-          }),
-
-          _quickActionButton('Notifications Preview', () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AdminNotificationsPage(
-                  empId:
-                      Provider.of<UserProvider>(
-                        context,
-                        listen: false,
-                      ).employeeId ??
-                      '',
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _quickActionButton('Mail', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MailDashboard()),
+                ).then((_) => _fetchMailCount());
+              }),
+              if (_mailCount > 0)
+                Positioned(
+                  right: -10,
+                  top: -10,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '$_mailCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            );
-          }),
+            ],
+          ),
+          // ✅ Notifications Preview with Badge logic
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _quickActionButton('Notifications Preview', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AdminNotificationsPage(
+                      empId:
+                          Provider.of<UserProvider>(
+                            context,
+                            listen: false,
+                          ).employeeId ??
+                          '',
+                    ),
+                  ),
+                ).then((_) {
+                  // This triggers when you come BACK to the dashboard
+                  _fetchNotificationCount();
+                });
+              }),
+              if (_notificationCount > 0)
+                Positioned(
+                  right: -8,
+                  top: -8,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      '$_notificationCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
           _quickActionButton('Performance Review', () {
             final userProvider = Provider.of<UserProvider>(
               context,
@@ -429,7 +536,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
               MaterialPageRoute(builder: (_) => const CompanyEventsScreen()),
             );
           }),
-          
 
           // ✅ Leave Approval button with badge (fixed)
           SizedBox(
@@ -453,8 +559,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 }),
                 if (_pendingCount > 0)
                   Positioned(
-                    right: 10,
-                    top: 10,
+                    right: 8,
+                    top: 8,
                     child: Container(
                       padding: const EdgeInsets.all(6),
                       decoration: const BoxDecoration(

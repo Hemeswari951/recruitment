@@ -11,8 +11,7 @@ import 'package:http/http.dart' as http;
 
 import '../sidebar.dart';
 import '../services/offcampus_service.dart';
-//import '../student_details_page.dart';
-import '../offcampus_student_details_page.dart';
+import '../student_details_page.dart';
 
 class OffCampusPage extends StatefulWidget {
   const OffCampusPage({super.key});
@@ -37,7 +36,7 @@ class _OffCampusPageState extends State<OffCampusPage> {
     'College',
     'Position',
     'BG Verification',
-    'Contact Person',
+    // 'Contact Person',
   ];
 
   // Dropdown options
@@ -212,9 +211,9 @@ class _OffCampusPageState extends State<OffCampusPage> {
     final totalStudentsController = TextEditingController(
       text: existing?['totalStudents']?.toString() ?? '',
     );
-    final aptitudeController = TextEditingController(
-      text: existing?['aptitudeSelected']?.toString() ?? '',
-    );
+    // final aptitudeController = TextEditingController(
+    //   text: existing?['aptitudeSelected']?.toString() ?? '',
+    // );
     final techController = TextEditingController(
       text: existing?['techSelected']?.toString() ?? '',
     );
@@ -226,9 +225,9 @@ class _OffCampusPageState extends State<OffCampusPage> {
         existing?['bgVerificationStatus']?.toString() ?? _bgOptions.first;
     String positionValue =
         existing?['selectedPosition']?.toString() ?? _positionOptions.first;
-    final contactPersonController = TextEditingController(
-      text: existing?['contactPerson'] ?? '',
-    );
+    // final contactPersonController = TextEditingController(
+    //   text: existing?['contactPerson'] ?? '',
+    // );
     final studentContactController = TextEditingController(
       text: existing?['studentContactDetails'] ?? '',
     );
@@ -286,13 +285,13 @@ class _OffCampusPageState extends State<OffCampusPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    TextField(
-                      controller: aptitudeController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Aptitude Selected (Count)',
-                      ),
-                    ),
+                    // TextField(
+                    //   controller: aptitudeController,
+                    //   keyboardType: TextInputType.number,
+                    //   decoration: const InputDecoration(
+                    //     labelText: 'Aptitude Selected (Count)',
+                    //   ),
+                    // ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: techController,
@@ -339,12 +338,12 @@ class _OffCampusPageState extends State<OffCampusPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    TextField(
-                      controller: contactPersonController,
-                      decoration: const InputDecoration(
-                        labelText: 'Contact Person',
-                      ),
-                    ),
+                    // TextField(
+                    //   controller: contactPersonController,
+                    //   decoration: const InputDecoration(
+                    //     labelText: 'Contact Person',
+                    //   ),
+                    // ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: studentContactController,
@@ -389,18 +388,17 @@ class _OffCampusPageState extends State<OffCampusPage> {
                     }
 
                     final payload = <String, dynamic>{
-                      //'dateOfRecruitment': chosenDate!.toIso8601String(),
-                      'dateOfRecruitment': _dateFmt.format(chosenDate!),
+                      'dateOfRecruitment': chosenDate!.toIso8601String(),
                       'collegeName': collegeController.text.trim(),
                       'totalStudents': parseOrZero(
                         totalStudentsController.text,
                       ),
-                      'aptitudeSelected': parseOrZero(aptitudeController.text),
+                      // 'aptitudeSelected': parseOrZero(aptitudeController.text),
                       'techSelected': parseOrZero(techController.text),
                       'hrSelected': parseOrZero(hrController.text),
                       'bgVerificationStatus': bgValue,
                       'selectedPosition': positionValue,
-                      'contactPerson': contactPersonController.text.trim(),
+                      // 'contactPerson': contactPersonController.text.trim(),
                       'studentContactDetails': studentContactController.text
                           .trim(),
                     };
@@ -539,36 +537,36 @@ class _OffCampusPageState extends State<OffCampusPage> {
                     ),
                     child: const Text('Refresh'),
                   ),
-                  const SizedBox(width: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: const Text('Menu'),
-                          content: const Text('Menu options (add your items)'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Close'),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(50),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                    ),
-                    child: const Text('Menu'),
-                  ),
+                  // const SizedBox(width: 12),
+                  // ElevatedButton(
+                  //   onPressed: () {
+                  //     showDialog(
+                  //       context: context,
+                  //       builder: (_) => AlertDialog(
+                  //         title: const Text('Menu'),
+                  //         content: const Text('Menu options (add your items)'),
+                  //         actions: [
+                  //           TextButton(
+                  //             onPressed: () => Navigator.pop(context),
+                  //             child: const Text('Close'),
+                  //           ),
+                  //         ],
+                  //       ),
+                  //     );
+                  //   },
+                  //   style: ElevatedButton.styleFrom(
+                  //     backgroundColor: Colors.white,
+                  //     foregroundColor: Colors.black,
+                  //     shape: RoundedRectangleBorder(
+                  //       borderRadius: BorderRadius.circular(50),
+                  //     ),
+                  //     padding: const EdgeInsets.symmetric(
+                  //       horizontal: 16,
+                  //       vertical: 12,
+                  //     ),
+                  //   ),
+                  //   child: const Text('Menu'),
+                  // ),
                 ],
               ),
             ),
@@ -706,7 +704,7 @@ class _DrivesTableState extends State<_DrivesTable> {
         final college = (d['collegeName'] ?? '').toString().toLowerCase();
         final position = (d['selectedPosition'] ?? '').toString().toLowerCase();
         final bg = (d['bgVerificationStatus'] ?? '').toString().toLowerCase();
-        final contact = (d['contactPerson'] ?? '').toString().toLowerCase();
+        // final contact = (d['contactPerson'] ?? '').toString().toLowerCase();
         final studentContacts = (d['studentContactDetails'] ?? '')
             .toString()
             .toLowerCase();
@@ -720,12 +718,15 @@ class _DrivesTableState extends State<_DrivesTable> {
             return position.contains(qRaw);
           case 'BG Verification':
             return bg.contains(qRaw);
-          case 'Contact Person':
-            return contact.contains(qRaw) || studentContacts.contains(qRaw);
+          // case 'Contact Person':
+          //   return contact.contains(qRaw) || studentContacts.contains(qRaw);
           default:
+            // final combined =
+            //     ('$dateStr $college $position $bg $contact $studentContacts')
+            //         .toLowerCase();
             final combined =
-                ('$dateStr $college $position $bg $contact $studentContacts')
-                    .toLowerCase();
+                ('$dateStr $college $position $bg  $studentContacts')
+                     .toLowerCase();
             return combined.contains(qRaw);
         }
       }).toList();
@@ -765,12 +766,12 @@ class _DrivesTableState extends State<_DrivesTable> {
               child: Text((row['totalStudents'] ?? 0).toString()),
             ),
           ),
-          DataCell(
-            SizedBox(
-              width: 120,
-              child: Text((row['aptitudeSelected'] ?? 0).toString()),
-            ),
-          ),
+          // DataCell(
+          //   SizedBox(
+          //     width: 120,
+          //     child: Text((row['aptitudeSelected'] ?? 0).toString()),
+          //   ),
+          // ),
           DataCell(
             SizedBox(
               width: 110,
@@ -792,19 +793,22 @@ class _DrivesTableState extends State<_DrivesTable> {
           DataCell(
             SizedBox(width: 140, child: Text(row['selectedPosition'] ?? '')),
           ),
-          DataCell(
-            SizedBox(width: 140, child: Text(row['contactPerson'] ?? '')),
-          ),
+          // DataCell(
+          //   SizedBox(width: 140, child: Text(row['contactPerson'] ?? '')),
+          // ),
           DataCell(
             IconButton(
               icon: const Icon(Icons.remove_red_eye, color: Colors.green),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  //builder: (_) => offcampusstudentdetails_page(driveId: id),
-                  builder: (_) => OffCampusStudentDetailsPage(driveId: id),
-                ),
-              ),
+             onPressed: () => Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => StudentDetailsPage(
+      key: ValueKey(id), // 🔥 THIS LINE FIXES THE BUG
+      driveId: id,
+       isOffCampus: true,
+    ),
+  ),
+),
             ),
           ),
           DataCell(
@@ -853,22 +857,22 @@ class _DrivesTableState extends State<_DrivesTable> {
               constraints: BoxConstraints(
                 minWidth: MediaQuery.of(context).size.width,
               ),
-              child: DataTable(
-                columnSpacing: 16,
-                horizontalMargin: 12,
-                headingRowColor: WidgetStateProperty.resolveWith(
-                  (states) => Colors.grey.shade200,
-                ),
+          child: DataTable(
+            columnSpacing: 16,
+            horizontalMargin: 12,
+            headingRowColor: WidgetStateProperty.resolveWith(
+              (states) => Colors.grey.shade200,
+            ),
                 columns: const [
                   DataColumn(label: Text('Date')),
                   DataColumn(label: Text('College Name')),
                   DataColumn(label: Text('Total Students')),
-                  DataColumn(label: Text('Aptitude Selected')),
+                  // DataColumn(label: Text('Aptitude Selected')),
                   DataColumn(label: Text('Tech Selected')),
                   DataColumn(label: Text('HR Selected')),
                   DataColumn(label: Text('BG Verification')),
                   DataColumn(label: Text('Selected Position')),
-                  DataColumn(label: Text('Contact Person')),
+                  // DataColumn(label: Text('Contact Person')),
                   DataColumn(label: Text('Students')),
                   DataColumn(label: Text('Actions')),
                 ],

@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const ToDo = require('../models/Todo');
+const ToDo = require('../models/todo');
 
 
 // ✅ Calculate Work Progress for ONE employee

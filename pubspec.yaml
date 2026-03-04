@@ -14,7 +14,7 @@ dependencies:
   font_awesome_flutter: ^10.7.0
   percent_indicator: ^4.2.2
   table_calendar: ^3.0.9
-  http: ^0.13.6
+  http: ^1.6.0
   intl: ^0.19.0
   http_parser: ^4.0.2
   image_picker: ^1.1.1
@@ -28,13 +28,23 @@ dependencies:
   audioplayers: ^6.1.0
   open_filex: ^4.7.0
   path_provider: ^2.0.15
-  
+  socket_io_client: ^2.0.3
+  livekit_client: ^2.5.4
+  flutter_webrtc: ^1.2.1    # UPDATED VERSION
+  flutter_dotenv: ^6.0.0
+  csv: ^6.0.0
+  file_saver: ^0.2.12
+  excel: ^4.0.4
+  emoji_picker_flutter: ^4.4.0
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.0
 
     
   
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  emoji_picker_flutter: ^4.4.0
     
   flutter_lints: ^5.0.0
 
@@ -45,7 +55,8 @@ flutter:
     - assets/
     - assets/event-png/
     - assets/emp-directory/ 
-    - assets/sounds/alert.mp3
+    - assets/sounds/warning.mp3
+    - assets/sounds/alarm.mp3
     - assets/fonts/
   
   fonts:
@@ -55,3 +66,6 @@ flutter:
           weight: 400
         - asset: assets/fonts/Calibri-Bold.ttf
           weight: 700
+    - family: DSEG7
+      fonts:
+         - asset: assets/fonts/DSEG7Classic-Bold.ttf

@@ -161,26 +161,88 @@ router.put('/:id/students/:studentId', upload.single('resume'), async (req, res)
   }
 });
 
+// router.delete('/:id/students/:studentId', async (req, res) => {
+//   try {
+//     const drive = await OffCampusDrive.findById(req.params.id);
+//     if (!drive) return res.status(404).json({ message: 'Drive not found' });
+
+//     const s = drive.students.id(req.params.studentId);
+//     if (!s) return res.status(404).json({ message: 'Student not found' });
+
+//     if (s.resumePath) {
+//       const fp = path.join(__dirname, '..', s.resumePath);
+//       if (fs.existsSync(fp)) fs.unlinkSync(fp);
+//     }
+
+//     s.remove();
+//     drive.totalStudents = Math.max(0, (drive.totalStudents || 1) - 1);
+//     await drive.save();
+
+//     res.json({ message: 'Student deleted', drive });
+//   } catch (err) {
+//     res.status(500).json({ error: err.message });
+//   }
+// });
 router.delete('/:id/students/:studentId', async (req, res) => {
   try {
     const drive = await OffCampusDrive.findById(req.params.id);
     if (!drive) return res.status(404).json({ message: 'Drive not found' });
 
-    const s = drive.students.id(req.params.studentId);
-    if (!s) return res.status(404).json({ message: 'Student not found' });
+    const studentId = req.params.studentId;
 
-    if (s.resumePath) {
-      const fp = path.join(__dirname, '..', s.resumePath);
-      if (fs.existsSync(fp)) fs.unlinkSync(fp);
+    // Try Mongoose subdocument API first
+    let s = typeof drive.students.id === 'function' ? drive.students.id(studentId) : null;
+
+    if (!s) {
+      // Fallback: find index by matching _id string
+      const idx = drive.students.findIndex(st => {
+        if (!st || st._id == null) return false;
+        return st._id.toString() === studentId.toString();
+      });
+
+      if (idx === -1) {
+        return res.status(404).json({ message: 'Student not found' });
+      }
+
+      s = drive.students[idx];
+
+      // delete resume file if exists
+      if (s.resumePath) {
+        const fp = path.join(__dirname, '..', s.resumePath);
+        if (fs.existsSync(fp)) {
+          try { fs.unlinkSync(fp); } catch (e) { console.warn('Failed removing resume file', fp, e); }
+        }
+      }
+
+      // remove by index
+      drive.students.splice(idx, 1);
+    } else {
+      // we got a mongoose subdocument
+      if (s.resumePath) {
+        const fp = path.join(__dirname, '..', s.resumePath);
+        if (fs.existsSync(fp)) {
+          try { fs.unlinkSync(fp); } catch (e) { console.warn('Failed removing resume file', fp, e); }
+        }
+      }
+
+      // if remove() exists use it, else fallback to filter
+      if (typeof s.remove === 'function') {
+        s.remove();
+      } else {
+        drive.students = drive.students.filter(st => st._id.toString() !== studentId.toString());
+      }
     }
 
-    s.remove();
-    drive.totalStudents = Math.max(0, (drive.totalStudents || 1) - 1);
+    // Recompute totalStudents from actual array length (safer)
+    drive.totalStudents = Array.isArray(drive.students) ? drive.students.length : 0;
+
     await drive.save();
 
+    console.log('Offcampus student removed. driveId=', drive._id, 'totalStudents=', drive.totalStudents);
     res.json({ message: 'Student deleted', drive });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('DELETE offcampus student error:', err);
+    res.status(500).json({ error: err.message || err });
   }
 });
 

@@ -6,6 +6,7 @@ const path = require("path");
 const Attendance = require("../models/attendance");
 const Employee = require("../models/employee"); // 🔹 merged schema we created earlier
 const LeaveBalance = require("../models/leaveBalance");
+const Profile = require("../models/profile");
 
 const router = express.Router();
 const fs = require("fs");
@@ -52,9 +53,9 @@ function getToday() {
 
 // ------------------ Employee Login ------------------ //
 router.post("/employee-login", async (req, res) => {
-  const { employeeId, employeeName, position } = req.body;
+  const { employeeId, employeeName, position,password } = req.body;
 
-  if (!employeeId || !employeeName || !position) {
+  if (!employeeId || !employeeName || !position || !password) {
     return res.status(400).json({ message: "All fields are required" });
   }
 
@@ -69,6 +70,12 @@ router.post("/employee-login", async (req, res) => {
     if (!employee) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
+
+    // ✅ Check password match
+    if(employee.password !== password){
+      return res.status(401).json({message:"Invalid password"});
+    }
+
 
     // ✅ Ensure LeaveBalance exists
     await LeaveBalance.updateOne(
@@ -112,6 +119,9 @@ router.get("/employees", async (req, res) => {
           employeeId: emp.employeeId,
         }).sort({ createdAt: -1 });
 
+        // Fetch Profile for extra details
+        const profile = await Profile.findOne({ id: emp.employeeId }).select("date_of_appointment work_email_id");
+
         let status = "N/A";
         let loginTime = "Not logged in yet";
         let logoutTime = "Not logged out yet";
@@ -130,6 +140,8 @@ router.get("/employees", async (req, res) => {
           loginTime,
           logoutTime,
           date,
+          dateOfAppointment: profile ? profile.date_of_appointment : "",
+          workEmail: profile ? profile.work_email_id : "",
         };
       })
     );
@@ -223,9 +235,9 @@ router.get("/employees/:employeeId", async (req, res) => {
 // ✅ Add new employee + optional image
 router.post("/employees", upload.single("employeeImage"), async (req, res) => {
   try {
-    const { employeeId, employeeName, position, domain } = req.body;
+    const { employeeId, employeeName, position, domain ,password, dateOfAppointment, workEmail } = req.body;
 
-    if (!employeeId || !employeeName || !position || !domain) {
+    if (!employeeId || !employeeName || !position || !domain || !password) {
       return res.status(400).json({ message: "⚠ All fields are required" });
     }
 
@@ -239,10 +251,25 @@ router.post("/employees", upload.single("employeeImage"), async (req, res) => {
       employeeName,
       position,
       domain,
+      password,
       employeeImage: req.file ? `/uploads/${req.file.filename}` : null,
     });
 
     await newEmployee.save();
+// Check if profile already exists
+const existingProfile = await Profile.findOne({ id: employeeId });
+
+if (!existingProfile) {
+  await Profile.create({
+    id: employeeId,
+    full_name: employeeName,
+    designation: position,
+    department: domain,
+    password: password,
+    date_of_appointment: dateOfAppointment,
+    work_email_id: workEmail
+  });
+}
 
     res.status(201).json({
       message: "✅ Employee added successfully",
@@ -254,25 +281,101 @@ router.post("/employees", upload.single("employeeImage"), async (req, res) => {
   }
 });
 
+// ✅ Add new employees in bulk from Excel
+router.post("/employees/bulk", async (req, res) => {
+  const employeesData = req.body;
+  if (!Array.isArray(employeesData) || employeesData.length === 0) {
+    return res.status(400).json({ message: "Request body must be a non-empty array of employees." });
+  }
+
+  let successCount = 0;
+  let failureCount = 0;
+  const errors = [];
+
+  for (const empData of employeesData) {
+    try {
+      const { employeeId, employeeName, position, domain, password, dateOfAppointment, workEmail } = empData;
+
+      if (!employeeId || !employeeName || !position || !domain || !password) {
+        failureCount++;
+        errors.push(`Skipped row due to missing required fields (ID: ${employeeId || 'N/A'})`);
+        continue;
+      }
+
+      const existing = await Employee.findOne({ employeeId });
+      if (existing) {
+        failureCount++;
+        errors.push(`Employee ID ${employeeId} already exists.`);
+        continue;
+      }
+
+      const newEmployee = new Employee({ employeeId, employeeName, position, domain, password, employeeImage: null });
+      await newEmployee.save();
+
+      const existingProfile = await Profile.findOne({ id: employeeId });
+      if (!existingProfile) {
+        await Profile.create({
+          id: employeeId,
+          full_name: employeeName,
+          designation: position,
+          department: domain,
+          password: password,
+          date_of_appointment: dateOfAppointment,
+          work_email_id: workEmail
+        });
+      }
+      successCount++;
+    } catch (err) {
+      failureCount++;
+      const empId = empData.employeeId || 'unknown';
+      errors.push(`Error for employee ${empId}: ${err.message}`);
+    }
+  }
+
+  res.status(200).json({ message: "Bulk import process completed.", successCount, failureCount, errors });
+});
+
 // ✅ Update employee
 router.put("/employees/:id", upload.single("employeeImage"), async (req, res) => {
   try {
-    const { employeeName, position, domain } = req.body;
+    const { employeeName, position, domain  ,password, dateOfAppointment, workEmail} = req.body;
 
-    const updateData = { employeeName, position, domain };
+    const updateData = {};
+    if (employeeName) updateData.employeeName = employeeName;
+    if (position) updateData.position = position;
+    if (domain) updateData.domain = domain;
+    if (password) updateData.password = password;
     if (req.file) {
       updateData.employeeImage = `/uploads/${req.file.filename}`;
     }
 
     const updated = await Employee.findOneAndUpdate(
       { employeeId: req.params.id },
-      updateData,
+      { $set: updateData },
       { new: true }
     );
+
+    // Update Profile
+    const profileUpdate = {
+      designation: updated.position,
+      department: updated.domain,
+      full_name: updated.employeeName
+    };
+    if (password) profileUpdate.password = password;
+    if (dateOfAppointment) profileUpdate.date_of_appointment = dateOfAppointment;
+    if (workEmail) profileUpdate.work_email_id = workEmail;
+
+    await Profile.findOneAndUpdate({ id: req.params.id }, { $set: profileUpdate });
 
     if (!updated) {
       return res.status(404).json({ message: "Employee not found" });
     }
+
+
+    // 🟢 Debugging start
+    console.log("🟢 Reached update route for ID:", req.params.id);
+    console.log("🟢 Request body received:", req.body);
+    console.log("🟢 Password value:", req.body.password);
 
     res.json({
       message: "✅ Employee updated successfully",
@@ -321,6 +424,19 @@ router.get("/employees/search/:query", async (req, res) => {
   } catch (err) {
     console.error("❌ Error searching employees:", err);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+
+// ✅ Get all unique domains (for dropdowns / filters)
+router.get("/domains", async (req, res) => {
+  try {
+    const domains = await Employee.distinct("domain");
+    res.json(domains);
+  } catch (err) {
+    console.error("❌ Error fetching domains:", err);
+    res.status(500).json({ message: "Server error fetching domains" });
   }
 });
 

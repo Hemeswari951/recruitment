@@ -1,5 +1,4 @@
 //company_events.dart
-
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -36,7 +35,7 @@ class CompanyEvent {
         specialGuest: json['specialGuest'],
         description: json['description'],
         bannerUrl: json['bannerUrl'],
-        dateTime: DateTime.parse(json['dateTime']).toLocal(),
+        dateTime: DateTime.parse(json['dateTime']),
       );
 
   Map<String, dynamic> toJson() => {
@@ -47,7 +46,8 @@ class CompanyEvent {
         'specialGuest': specialGuest,
         'description': description,
         'bannerUrl': bannerUrl,
-        'dateTime': dateTime.toIso8601String(),
+        'dateTime': dateTime.toUtc().toIso8601String(),
+
       };
 }
 
@@ -74,7 +74,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
   Future<void> _fetchEvents() async {
     try {
       final response =
-          await http.get(Uri.parse('http://localhost:5000/company-events'));
+          await http.get(Uri.parse('https://company-04bz.onrender.com/company-events'));
 
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
@@ -201,8 +201,8 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
               );
 
               final url = isEditing
-                  ? 'http://localhost:5000/company-events/${event.id}'
-                  : 'http://localhost:5000/company-events';
+                  ? 'https://company-04bz.onrender.com/company-events/${event.id}'
+                  : 'https://company-04bz.onrender.com/company-events';
               final method = isEditing ? 'PUT' : 'POST';
 
               final response = await (method == 'POST'
@@ -227,7 +227,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
 
   Future<void> _deleteEvent(String id) async {
     final response =
-        await http.delete(Uri.parse('http://localhost:5000/company-events/$id'));
+        await http.delete(Uri.parse('https://company-04bz.onrender.com/company-events/$id'));
     if (response.statusCode == 200) {
       _fetchEvents();
     }
@@ -287,7 +287,7 @@ class _CompanyEventsScreenState extends State<CompanyEventsScreen> {
                                 title: event.title,
                                 description: event.description ?? '',
                                 company: event.company,
-                                time: _dateFormat.format(event.dateTime),
+                                time: _dateFormat.format(event.dateTime.toLocal()),
                                 onDelete: widget.isHR
                                     ? () async {
                                         final confirm = await showDialog(

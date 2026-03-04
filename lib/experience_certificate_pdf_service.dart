@@ -247,12 +247,12 @@ class ExperienceCertificatePdfService {
   }
 
   // helper to extract first name
-  String _firstName(String fullName) {
-    final t = fullName.trim();
-    if (t.isEmpty) return '';
-    final parts = t.split(RegExp(r'\s+'));
-    return parts.isNotEmpty ? parts.first : t;
-  }
+  // String _firstName(String fullName) {
+  //   final t = fullName.trim();
+  //   if (t.isEmpty) return '';
+  //   final parts = t.split(RegExp(r'\s+'));
+  //   return parts.isNotEmpty ? parts.first : t;
+  // }
 
   String _formatDate(DateTime d) {
     final dd = d.day.toString().padLeft(2, '0');

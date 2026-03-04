@@ -1,9 +1,11 @@
+//models//Leave.js
 const mongoose = require('mongoose');
 
 const leaveSchema = new mongoose.Schema({
   employeeId: { type: String, required: true },
   employeeName: { type: String, required: true },
   position: { type: String, required: true },
+  employeeDomain: { type: String, trim: true, index: true},
   leaveType: { type: String, required: true },
   
   approver: { type: String, required: true }, // "admin" | "superadmin"

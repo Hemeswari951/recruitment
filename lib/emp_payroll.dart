@@ -1,3 +1,4 @@
+// emp_payroll.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -6,6 +7,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 
 import 'payslip.dart';
 import 'sidebar.dart';
@@ -20,41 +22,65 @@ class EmpPayroll extends StatefulWidget {
 
 class _EmpPayrollState extends State<EmpPayroll> {
   String? selectedYear;
-  List<bool> checkedList = List<bool>.filled(12, false);
+  // List<bool> checkedList = List<bool>.filled(12, false);
+  final ValueNotifier<List<bool>> checkedList =
+    ValueNotifier(List<bool>.filled(12, false));
+
+  final ScrollController _scrollController = ScrollController();
+  DateTime? employeeDOJ;
+
+
   @override
   void initState() {
     super.initState();
-
-    // ✅ Default selected year = current year
-    selectedYear = DateTime.now().year.toString();
+    Future.delayed(Duration.zero, _fetchEmployeeDOJ);
   }
+
+  @override
+void dispose() {
+  _scrollController.dispose();
+  super.dispose();
+}
 
   bool _areAllAllowedMonthsChecked() {
-    int currentYear = DateTime.now().year;
-    int currentMonth = DateTime.now().month;
-    int selected = int.parse(selectedYear!);
+  if (selectedYear == null || employeeDOJ == null) return false;
 
-    for (int i = 0; i < checkedList.length; i++) {
-      bool isDisabled = false;
+  int selected = int.parse(selectedYear!);
+  DateTime now = DateTime.now();
 
-      if (selected > currentYear) {
-        isDisabled = true;
-      } else if (selected == currentYear && i + 1 >= currentMonth) {
-        isDisabled = true;
-      }
+  for (int i = 0; i < checkedList.value.length; i++) {
+    bool isDisabled = false;
+    DateTime monthDate = DateTime(selected, i + 1);
 
-      if (!isDisabled && !checkedList[i]) {
-        return false; // Found a valid month not checked
-      }
+    // ❌ Before joining month
+    if (monthDate.isBefore(
+        DateTime(employeeDOJ!.year, employeeDOJ!.month))) {
+      isDisabled = true;
     }
-    return true; // ✅ all valid months are checked
+
+    // ❌ Future months in current year
+    else if (selected == now.year &&
+        i + 1 >= now.month) {
+      isDisabled = true;
+    }
+
+    // ❌ Future years
+    else if (selected > now.year) {
+      isDisabled = true;
+    }
+
+    if (!isDisabled && !checkedList.value[i]) {
+      return false;
+    }
   }
 
-//   int getDaysInMonth(int year, int month) {
-//   final beginningNextMonth =
-//       (month < 12) ? DateTime(year, month + 1, 1) : DateTime(year + 1, 1, 1);
-//   return beginningNextMonth.subtract(const Duration(days: 1)).day;
-// }
+  return true;
+}
+
+
+   int getTotalDaysInMonth(int year, int month) {
+  return DateTime(year, month + 1, 0).day;
+}
 
   static const List<String> months = [
     'January',
@@ -85,38 +111,228 @@ class _EmpPayrollState extends State<EmpPayroll> {
     'nov',
     'dec',
   ];
-Future<int> fetchWorkingDays(String employeeId, int month, int year) async {
+
+  DateTime safeParseDate(String raw) {
   try {
-    final response = await http.get(
-      Uri.parse("http://localhost:5000/attendance/attendance/history/$employeeId"),
-    );
-
-    if (response.statusCode == 200) {
-      List<dynamic> data = jsonDecode(response.body);
-
-      // ✅ Count only valid login days for the given month/year
-      final workdays = data.where((item) {
-        if (item['date'] != null &&
-            item['loginTime'] != null &&
-            item['loginTime'].toString().isNotEmpty) {
-          final dateParts = item['date'].split('-'); // dd-MM-yyyy
-          int m = int.parse(dateParts[1]);
-          int y = int.parse(dateParts[2]);
-          return m == month && y == year;
-        }
-        return false;
-      }).length;
-
-      return workdays;
-    } else {
-      print("❌ Attendance fetch failed: ${response.statusCode}");
-      return 0;
+    return DateTime.parse(raw);
+  } catch (_) {
+    try {
+      return DateFormat('dd-MM-yyyy').parse(raw);
+    } catch (_) {
+      return DateFormat('dd/MM/yyyy').parse(raw);
     }
-  } catch (e) {
-    print("❌ Attendance error: $e");
-    return 0;
   }
 }
+
+List<String> get _years {
+  int currentYear = DateTime.now().year;
+
+  if (employeeDOJ == null) {
+    return [currentYear.toString()];
+  }
+
+  int joinYear = employeeDOJ!.year;
+
+  return List.generate(
+    currentYear - joinYear + 1,
+    (index) => (joinYear + index).toString(),
+  );
+}
+
+Future<void> _fetchEmployeeDOJ() async {
+  final employeeId =
+      Provider.of<UserProvider>(context, listen: false).employeeId;
+
+  if (employeeId == null) return;
+
+  final response = await http.post(
+    Uri.parse('https://company-04bz.onrender.com/get-multiple-payslips'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'employee_id': employeeId,
+      'year': DateTime.now().year.toString(),
+      'months': [], // 👈 EMPTY
+    }),
+  );
+
+  if (response.statusCode == 200) {
+    final data = jsonDecode(response.body);
+    final employee = data['employeeInfo'];
+
+    if (employee != null && employee['date_of_joining'] != null) {
+      setState(() {
+        employeeDOJ = safeParseDate(employee['date_of_joining']);
+        selectedYear = DateTime.now().year.toString();
+      });
+    }
+  } else {
+    print("Failed to fetch DOJ: ${response.body}");
+  }
+}
+
+
+Future<Map<String, double>> fetchMonthlyPayrollSummaryForPdf({
+  required String employeeId,
+  required int monthIndex,
+  required int year,
+  required String monthName,
+}) async {
+  // 1) Attendance month
+  final resAttendance = await http.get(Uri.parse(
+    "https://company-04bz.onrender.com/attendance/attendance/month?year=$year&month=$monthIndex",
+  ));
+
+  // 2) Approved leave month
+  final resLeaves = await http.get(Uri.parse(
+    "https://company-04bz.onrender.com/apply/approved/month?year=$year&month=$monthIndex",
+  ));
+
+  // 3) Holiday month
+  final resHolidays = await http.get(Uri.parse(
+    "https://company-04bz.onrender.com/notifications/holiday/employee/ADMIN?month=$monthName&year=$year",
+  ));
+
+  List<Map<String, dynamic>> monthlyAttendance = [];
+  List<Map<String, dynamic>> approvedLeaves = [];
+  Set<String> holidayDateKeys = {};
+
+  if (resAttendance.statusCode == 200) {
+    monthlyAttendance =
+        List<Map<String, dynamic>>.from(jsonDecode(resAttendance.body));
+  }
+
+  if (resLeaves.statusCode == 200) {
+    approvedLeaves = List<Map<String, dynamic>>.from(jsonDecode(resLeaves.body));
+  }
+
+  if (resHolidays.statusCode == 200) {
+    final List data = jsonDecode(resHolidays.body);
+    holidayDateKeys = data.map<String>((h) {
+      return "${h["day"]}-$monthIndex-${h["year"]}";
+    }).toSet();
+  }
+
+  // Helpers
+  // List<DateTime> getDaysInMonth(int year, int month) {
+  //   final lastDay = DateTime(year, month + 1, 0).day;
+  //   return List.generate(lastDay, (index) => DateTime(year, month, index + 1));
+  // }
+
+  bool isWeekend(DateTime date) =>
+      date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+
+  bool isHoliday(DateTime date) {
+    final key = "${date.day}-${date.month}-${date.year}";
+    return holidayDateKeys.contains(key);
+  }
+
+  // Attendance Map for employee
+  final attendanceMap = <String, String>{};
+  for (final a in monthlyAttendance) {
+    if (a["employeeId"] == employeeId) {
+      final date = a["date"]; // dd-MM-yyyy
+      final type = a["attendanceType"] ?? "P";
+      attendanceMap[date] = type;
+    }
+  }
+
+  // Leave Set for employee
+  final leaveSet = <String>{};
+  for (final leave in approvedLeaves) {
+    if (leave["employeeId"] != employeeId) continue;
+
+    // final fromRaw = DateTime.parse(leave["fromDate"]).toLocal();
+    // final toRaw = DateTime.parse(leave["toDate"]).toLocal();
+    final fromRaw = safeParseDate(leave["fromDate"]).toLocal();
+final toRaw   = safeParseDate(leave["toDate"]).toLocal();
+
+
+    final from = DateTime(fromRaw.year, fromRaw.month, fromRaw.day);
+    final to = DateTime(toRaw.year, toRaw.month, toRaw.day);
+
+    for (DateTime d = from; !d.isAfter(to); d = d.add(const Duration(days: 1))) {
+      leaveSet.add(DateFormat("dd-MM-yyyy").format(d));
+    }
+  }
+
+  // Calculate
+  // final days = getDaysInMonth(year, monthIndex);
+  final firstDayOfMonth = DateTime(year, monthIndex, 1);
+final lastDayOfMonth = DateTime(year, monthIndex + 1, 0);
+// 🔥 FULL month working days
+double fullMonthWorkingDays = 0;
+
+for (DateTime d = firstDayOfMonth;
+    !d.isAfter(lastDayOfMonth);
+    d = d.add(const Duration(days: 1))) {
+
+  if (isWeekend(d)) continue;
+  if (isHoliday(d)) continue;
+
+  fullMonthWorkingDays += 1;
+}
+
+// 🔥 Determine effective start date (DOJ proration)
+DateTime effectiveStart = firstDayOfMonth;
+
+if (employeeDOJ != null &&
+    employeeDOJ!.year == year &&
+    employeeDOJ!.month == monthIndex) {
+  effectiveStart = DateTime(
+    employeeDOJ!.year,
+    employeeDOJ!.month,
+    employeeDOJ!.day,
+  );
+}
+  double total = 0;
+  double present = 0;
+  double half = 0;
+  double leave = 0;
+
+  for (DateTime d = effectiveStart;
+    !d.isAfter(lastDayOfMonth);
+    d = d.add(const Duration(days: 1))) {
+
+  if (isWeekend(d)) continue;
+  if (isHoliday(d)) continue;
+
+  total += 1;
+
+    final key = DateFormat("dd-MM-yyyy").format(d);
+
+    if (leaveSet.contains(key)) {
+      leave += 1;
+      continue;
+    }
+
+    final status = attendanceMap[key];
+
+    if (status == "P") {
+      present += 1;
+    } else if (status == "HL") {
+      half += 0.5;
+    }
+  }
+
+  final absent = total - present - half - leave;
+
+  // ✅ Your rule:
+  // LOP = Absent + extra leave above 3
+  const eligibleLeave = 3.0;
+  final extraLeaveLop = (leave - eligibleLeave) > 0 ? (leave - eligibleLeave) : 0.0;
+  final lop = absent + extraLeaveLop;
+
+  return {
+    "fullMonthWorkingDays": fullMonthWorkingDays,
+    "eligibleWorkingDays": total,
+    "presentDays": present,
+    "halfDays": half,
+    "leaveDays": leave,
+    "absentDays": absent,
+    "lopDays": lop,
+  };
+}
+
 
   Future<void> _downloadAllCheckedPayslips() async {
     final employeeId =
@@ -124,7 +340,7 @@ Future<int> fetchWorkingDays(String employeeId, int month, int year) async {
 
     if (employeeId == null ||
         selectedYear == null ||
-        !checkedList.contains(true)) {
+        !checkedList.value.contains(true)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select year and at least one month')),
       );
@@ -132,15 +348,15 @@ Future<int> fetchWorkingDays(String employeeId, int month, int year) async {
     }
 
     final selectedMonths = <String>[];
-    for (int i = 0; i < checkedList.length; i++) {
-      if (checkedList[i]) {
+    for (int i = 0; i < checkedList.value.length; i++) {
+      if (checkedList.value[i]) {
         selectedMonths.add(monthKeys[i]);
       }
     }
 
     try {
       final response = await http.post(
-        Uri.parse('http://localhost:5000/get-multiple-payslips'),
+        Uri.parse('https://company-04bz.onrender.com/get-multiple-payslips'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'year': selectedYear,
@@ -159,19 +375,71 @@ Future<int> fetchWorkingDays(String employeeId, int month, int year) async {
         );
 
         for (final monthKey in selectedMonths) {
-          final monthIndex = monthKeys.indexOf(monthKey);
-          final monthName = months[monthIndex];
+          if (data['months'][monthKey] == null) {
+    print("⚠️ No payslip data for $monthKey");
+    continue;
+  }
+  final monthIndex = monthKeys.indexOf(monthKey);
+  final monthName = months[monthIndex];
 
-        // ✅ Fetch attendance-based working days
-        int attendanceWorkdays = await fetchWorkingDays(
-          employeeId,
-          monthIndex + 1,
-          int.parse(selectedYear!),
-        );
-          final earnings = Map<String, dynamic>.from(
-              data['months'][monthKey]['earnings']);
-          final deductions = Map<String, dynamic>.from(
-              data['months'][monthKey]['deductions']);
+  final totalMonthDays = getTotalDaysInMonth(
+  int.parse(selectedYear!),
+  monthIndex + 1,
+);
+
+
+  // ✅ attendance summary
+  final summary = await fetchMonthlyPayrollSummaryForPdf(
+    employeeId: employeeId,
+    monthIndex: monthIndex + 1,
+    year: int.parse(selectedYear!),
+    monthName: monthName,
+  );
+
+  // final totalWorkdays = summary["totalWorkingDays"] ?? 0;
+  final fullMonthDays = summary["fullMonthWorkingDays"] ?? 0;
+final eligibleDays = summary["eligibleWorkingDays"] ?? 0;
+final lopDays = summary["lopDays"] ?? 0;
+  
+  // ✅ backend earnings/deductions
+  final earnings =
+      Map<String, dynamic>.from(data['months'][monthKey]['earnings']);
+  final deductions =
+      Map<String, dynamic>.from(data['months'][monthKey]['deductions']);
+
+  // ✅ calculate LOP salary
+  final gross =
+      double.tryParse(earnings['GrossTotalSalary']?.toString() ?? "0") ?? 0;
+  final otherDeduction =
+      double.tryParse(deductions['TotalDeductions']?.toString() ?? "0") ?? 0;
+
+  double perDaySalary = 0;
+
+if (fullMonthDays > 0) {
+  perDaySalary = gross / fullMonthDays;
+}
+
+// 🔥 Salary only for eligible days
+final proratedGross = perDaySalary * eligibleDays;
+
+final lopAmount = perDaySalary * lopDays;
+
+final netSalary = proratedGross - otherDeduction - lopAmount;
+  // final netSalary = gross - otherDeduction;
+
+
+  // ✅ update deductions for pdf printing
+  deductions['LOP Amount'] = lopAmount.toStringAsFixed(2);
+  deductions['NetSalary'] = netSalary.toStringAsFixed(2);
+
+  String formattedDoj = employee['date_of_joining'];
+
+if (formattedDoj.contains('-')) {
+  try {
+    final d = safeParseDate(formattedDoj);
+    formattedDoj = DateFormat('dd-MM-yyyy').format(d);
+  } catch (_) {}
+}
 
           pdf.addPage(
     pw.Page(
@@ -234,23 +502,27 @@ Future<int> fetchWorkingDays(String employeeId, int month, int year) async {
                     border:
                         pw.TableBorder.all(width: 1, color: PdfColors.grey),
                     children: [
+                      
                       _detailRow('Employee Name', employee['employee_name'],
                           'Employee ID', employee['employee_id']),
-                      _detailRow('Date of Joining',
-                          employee['date_of_joining'], 'Bank Name',
-                          employee['bank_name']),
+                      // _detailRow('Date of Joining',
+                      //     employee['date_of_joining'], 'Bank Name',
+                      //     employee['bank_name']),
+                      _detailRow('Date of Joining', formattedDoj, 'Bank Name', employee['bank_name']),
                       _detailRow('Designation', employee['designation'],
                           'Account No', employee['account_no']),
                       _detailRow('Location', employee['location'], 'UAN',
                           employee['uan']),
                       _detailRow(
-  'No.Of Days Worked',
-  attendanceWorkdays.toString(),
+  // 'No.Of Days Worked',
+  // totalWorkdays.toStringAsFixed(0),
+  'No.Of Days',
+  totalMonthDays.toString(),
   'ESIC No',
   employee['esic_no'],
 ),
-                      _detailRow('PAN', employee['pan'], 'LOP',
-                          employee['lop']),
+                      _detailRow('PAN', employee['pan'], 'LOP Days',
+                          lopDays.toStringAsFixed(1)),
                     ],
                   ),
 
@@ -400,7 +672,7 @@ Future<int> fetchWorkingDays(String employeeId, int month, int year) async {
                   ),
                   const SizedBox(width: 20),
                   DropdownButton<String>(
-                    value: selectedYear,
+                    value: _years.contains(selectedYear) ? selectedYear : null,
                     hint: const Text(
                       'Select Year',
                       style: TextStyle(color: Colors.white),
@@ -409,43 +681,22 @@ Future<int> fetchWorkingDays(String employeeId, int month, int year) async {
                     icon:
                         const Icon(Icons.arrow_drop_down, color: Colors.white),
                     style: const TextStyle(color: Colors.white),
-                    items: [
-                      for (int year = 2020;
-                          year <= DateTime.now().year;
-                          year++)
-                        DropdownMenuItem(
-                          value: year.toString(),
-                          child: Text(
-                            year.toString(),
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ),
-                    ],
+                    items: _years.map((year) {
+  return DropdownMenuItem(
+    value: year,
+    child: Text(year, style: const TextStyle(color: Colors.white)),
+  );
+}).toList(),
                     onChanged: (value) {
-                      setState(() {
-                        selectedYear = value!;
-                        int currentYear = DateTime.now().year;
-                        int currentMonth = DateTime.now().month;
-                        int selected = int.parse(selectedYear!);
+  if (value == null) return;
 
-                        for (int i = 0; i < checkedList.length; i++) {
-                          bool isDisabled = false;
+  setState(() {
+    selectedYear = value;
+  });
 
-                          if (selected > currentYear) {
-                            isDisabled = true;
-                          } else if (selected == currentYear &&
-                              i + 1 >= currentMonth) {
-                            isDisabled = true;
-                          }
-
-                          if (isDisabled) {
-                            checkedList[i] = false;
-                          } else {
-                            checkedList[i] = false;
-                          }
-                        }
-                      });
-                    },
+  // ✅ Reset all months safely
+  checkedList.value = List<bool>.filled(12, false);
+},
                   ),
                   const SizedBox(width: 20),
                   ElevatedButton(
@@ -457,7 +708,7 @@ Future<int> fetchWorkingDays(String employeeId, int month, int year) async {
                       ),
                     ),
                     child: const Text(
-                      'Download all',
+                      'Download Selected Payslips',
                       style: TextStyle(color: Colors.white),
                     ),
                   ),
@@ -468,155 +719,184 @@ Future<int> fetchWorkingDays(String employeeId, int month, int year) async {
 
             // Scrollable Month List
             Expanded(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2C314A),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      // Header Row with Select All
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Expanded(
-                            flex: 8,
-                            child: Text(
-                              'Months',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Text(
-                                  'Check All',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Checkbox(
-                                  value: _areAllAllowedMonthsChecked(),
-                                  onChanged: (bool? value) {
-                                    if (selectedYear == null) return;
-                                    setState(() {
-                                      int currentYear =
-                                          DateTime.now().year;
-                                      int currentMonth =
-                                          DateTime.now().month;
-                                      int selected =
-                                          int.parse(selectedYear!);
+  child: Container(
+    margin: const EdgeInsets.symmetric(horizontal: 20),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: const Color(0xFF2C314A),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      children: [
 
-                                      for (int i = 0;
-                                          i < checkedList.length;
-                                          i++) {
-                                        bool isDisabled = false;
-
-                                        if (selected > currentYear) {
-                                          isDisabled = true;
-                                        } else if (selected ==
-                                                currentYear &&
-                                            i + 1 >= currentMonth) {
-                                          isDisabled = true;
-                                        }
-
-                                        if (!isDisabled) {
-                                          checkedList[i] = value ?? false;
-                                        } else {
-                                          checkedList[i] = false;
-                                        }
-                                      }
-                                    });
-                                  },
-                                  checkColor: Colors.black,
-                                  fillColor: WidgetStateProperty.all<Color>(
-                                      Colors.white),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Divider(thickness: 2, color: Colors.white),
-                      const SizedBox(height: 10),
-
-                      // Month Rows
-                      ...List.generate(12, (index) {
-                        int currentYear = DateTime.now().year;
-                        int currentMonth = DateTime.now().month;
-                        bool isDisabled = false;
-
-                        if (selectedYear != null) {
-                          int selected = int.parse(selectedYear!);
-
-                          if (selected > currentYear) {
-                            isDisabled = true;
-                          } else if (selected == currentYear &&
-                              index + 1 >= currentMonth) {
-                            isDisabled = true;
-                          } else {
-                            isDisabled = false;
-                          }
-                        }
-
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6.0),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                flex: 8,
-                                child: Text(
-                                  months[index],
-                                  style: TextStyle(
-                                    color: isDisabled
-                                        ? Colors.white.withOpacity(0.3)
-                                        : Colors.white,
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                flex: 2,
-                                child: AbsorbPointer(
-                                  absorbing: isDisabled,
-                                  child: Opacity(
-                                    opacity: isDisabled ? 0.3 : 1.0,
-                                    child: Checkbox(
-                                      value: checkedList[index],
-                                      onChanged: isDisabled
-                                          ? null
-                                          : (bool? value) {
-                                              setState(() {
-                                                checkedList[index] =
-                                                    value ?? false;
-                                              });
-                                            },
-                                      checkColor: Colors.black,
-                                      fillColor:
-                                          WidgetStateProperty.all<Color>(
-                                              Colors.white),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
+        // ✅ STATIC HEADER (NOT SCROLLING)
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Expanded(
+              flex: 8,
+              child: Text(
+                'Months',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
+            Expanded(
+              flex: 2,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Check All',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Checkbox(
+                    value: _areAllAllowedMonthsChecked(),
+                    onChanged: (bool? value) {
+                      if (selectedYear == null) return;
+                      setState(() {
+                        int currentYear = DateTime.now().year;
+                        int currentMonth = DateTime.now().month;
+                        int selected = int.parse(selectedYear!);
+
+                        final updated = List<bool>.from(checkedList.value);
+
+for (int i = 0; i < updated.length; i++) {
+  bool isDisabled = false;
+  DateTime monthDate = DateTime(selected, i + 1);
+
+  if (employeeDOJ != null &&
+      monthDate.isBefore(DateTime(employeeDOJ!.year, employeeDOJ!.month))) {
+    isDisabled = true;
+  } else if (selected == currentYear && i + 1 >= currentMonth) {
+    isDisabled = true;
+  } else if (selected > currentYear) {
+    isDisabled = true;
+  }
+
+  if (!isDisabled) {
+    updated[i] = value ?? false;
+  } else {
+    updated[i] = false;
+  }
+}
+
+checkedList.value = updated;
+                      });
+                    },
+                    checkColor: Colors.black,
+                    fillColor:
+                        WidgetStateProperty.all<Color>(Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        const Divider(thickness: 2, color: Colors.white),
+        const SizedBox(height: 10),
+
+        // ✅ SCROLLABLE MONTH LIST ONLY
+        // ✅ SCROLLABLE MONTH LIST ONLY
+Expanded(
+  child: ValueListenableBuilder<List<bool>>(
+    valueListenable: checkedList,
+    builder: (context, list, _) {
+      return ListView.builder(
+        controller: _scrollController,
+        itemCount: 12,
+        itemBuilder: (context, index) {
+          int currentYear = DateTime.now().year;
+          int currentMonth = DateTime.now().month;
+          bool isDisabled = false;
+
+          if (selectedYear != null) {
+            int selected = int.parse(selectedYear!);
+
+            if (employeeDOJ != null) {
+              DateTime now = DateTime.now();
+              DateTime monthDate = DateTime(selected, index + 1);
+
+              // ❌ before joining month
+              if (monthDate.isBefore(
+                  DateTime(employeeDOJ!.year, employeeDOJ!.month))) {
+                isDisabled = true;
+              }
+              // ❌ future months current year
+              else if (selected == now.year &&
+                  index + 1 >= now.month) {
+                isDisabled = true;
+              }
+              // ❌ future years
+              else if (selected > now.year) {
+                isDisabled = true;
+              }
+            } else if (selected == currentYear) {
+              isDisabled = index + 1 >= currentMonth;
+            } else if (selected > currentYear) {
+              isDisabled = true;
+            }
+          }
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6.0),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 8,
+                  child: Text(
+                    months[index],
+                    style: TextStyle(
+                      color: isDisabled
+                          ? Colors.white.withOpacity(0.3)
+                          : Colors.white,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: AbsorbPointer(
+                    absorbing: isDisabled,
+                    child: Opacity(
+                      opacity: isDisabled ? 0.3 : 1.0,
+                      child: Checkbox(
+                        value: list[index], // ✅ IMPORTANT
+                        onChanged: isDisabled
+                            ? null
+                            : (bool? value) {
+                                final updated = [...list];
+                                updated[index] = value ?? false;
+                                checkedList.value = updated;
+                              },
+                        checkColor: Colors.black,
+                        fillColor:
+                            WidgetStateProperty.all<Color>(Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  ),
+),
+      ],
+    
+    ),
+  ),
+            
+),
+
           ],
         ),
       ),

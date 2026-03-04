@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const express = require("express");
 const router = express.Router();
 
-const Leave = require("../models/Leave");
+const Leave = require("../models/leave");
 const LeaveBalance = require("../models/leaveBalance");
 const Employee = require("../models/employee");
 
@@ -226,6 +226,10 @@ router.post("/apply-leave", async (req, res) => {
     if (to < from) {
       return res.status(400).json({ message: "❌ toDate must be same or after fromDate" });
     }
+    const emp = await Employee.findOne({ employeeId: employeeId.trim() });
+    if (!emp) {
+      return res.status(404).json({ message: "❌ Employee not found" });
+    }
 
     // const approver = approverForPosition(position); // ❌ No longer needed
     const applicantRole = position.toLowerCase();   // ✅ add this
@@ -238,6 +242,7 @@ router.post("/apply-leave", async (req, res) => {
       employeeId,
       employeeName,
       position,
+      employeeDomain: emp.domain,
       leaveType,
       approver: approverId, // ✅ Use approverId from request
       applicantRole,   // ✅ add this
@@ -269,11 +274,7 @@ router.get("/leave-approvals/:employeeId", async (req, res) => {
     if (!approverUser) return res.status(404).json({ message: "❌ Approver not found" });
 
     const approverRole = normalize(approverUser.position);
-
-    let findCondition = {
-      status: "Pending",
-      employeeId: { $ne: loggedInEmployeeId }, // Don't show own requests
-    };
+    const findCondition = {}; 
 
     // HR and Founder see requests from employees/interns (assigned to a TL) AND requests from TLs.
     if (approverRole === 'founder') {
@@ -294,9 +295,11 @@ router.get("/leave-approvals/:employeeId", async (req, res) => {
       findCondition._id = null; // No results
     }
 
-    const leaves = await Leave.find({
-      ...findCondition
-    }).sort({ createdAt: -1 });
+   // build condition FIRST
+  findCondition.status = { $in: ["Pending", "Approved", "Rejected"] };
+
+  const leaves = await Leave.find(findCondition)
+    .sort({ createdAt: -1 });
 
 
     res.status(200).json({ items: leaves.map(formatLeaveDates) });
@@ -326,6 +329,19 @@ router.get("/all/by-role/:role", async (req, res) => {
   }
 });
 
+// Get all unique domains
+router.get("/domains", async (req, res) => {
+  try {
+    const employees = await Employee.find({}, "domain"); // only fetch domain field
+    const domains = [...new Set(employees.map(emp => emp.domain).filter(Boolean))]; // unique, non-empty
+    if (!domains.includes("All")) domains.unshift("All"); // add "All" at start
+    domains.sort(); // optional: sort alphabetically
+    res.json({ domains });
+  } catch (err) {
+    console.error("❌ Error fetching domains:", err);
+    res.status(500).json({ domains: [] });
+  }
+});
 
 // Fetch All Leaves
 router.get("/all", async (req, res) => {
@@ -537,7 +553,6 @@ async function updateStatus(req, res) {
     res.status(500).json({ message: "❌ Server error" });
   }
 }
-router.put("/status/:id", updateStatus);
 
 router.put("/status/:id", async (req, res) => {
     try {
@@ -596,55 +611,43 @@ router.get("/leave-balance/:employeeId", async (req, res) => {
 // ✅ Filter leaves by date range + role awareness
 router.get("/filter", async (req, res) => {
   try {
-    const { employeeId, fromDate, toDate, role, status } = req.query;
+    const { employeeId, fromDate, toDate, role, status , domain } = req.query;
 
-    let query = {};
+    const query = {};
 
-    if (role) {
-      query.approver = normalize(role);
-      if (employeeId) {
-        query.employeeId = { $ne: employeeId.trim() };
-      }
-    } else if (employeeId) {
-      query.employeeId = employeeId.trim();
+    const r = normalize(role);
+
+    // 🔹 Role-based visibility
+    if (r === "tl") {
+      query.approver = employeeId.trim();
+    } 
+    else if (r === "hr") {
+      query.applicantRole = { $in: ["employee", "intern", "tech trainee", "tl"] };
+    } 
+    else if (r === "founder") {
+      query.applicantRole = { $in: ["employee", "intern", "tech trainee", "tl", "hr"] };
     }
 
-    // ✅ status filter
-    if (status) {
-      if (status === "Cancelled") {
-        query.status = "Cancelled";
-      } else if (status === "All") {
-        query.status = { $in: ["Approved", "Rejected"] };
-      } else {
+    // 🔹 Status filter
+    if (status && status !== "All") {
         query.status = status;
       }
-    } else {
-      query.status = { $nin: ["Cancelled"] };
+    if (domain && domain !== "All") {
+        query.employeeDomain = domain;
+      }
+
+    // 🔹 Date range
+    if (fromDate && toDate) {
+      const start = parseDateInput(fromDate, false);
+      const end = parseDateInput(toDate, true);
+
+      query.fromDate = { $lte: end };
+      query.toDate = { $gte: start };
     }
 
-    // ✅ date range filter
-if (fromDate && toDate) {
-  const start = parseDateInput(fromDate, false); // use helper
-  const end = parseDateInput(toDate, true);      // use helper
+    const leaves = await Leave.find(query).sort({ createdAt: -1 });
 
-  if (!start || !end) {
-    return res.status(400).json({ message: "❌ Invalid date range format" });
-  }
-
-  query.fromDate = { $lte: end };
-  query.toDate = { $gte: start };
-
-  console.log("📌 Raw Params:", { fromDate, toDate, status, employeeId, role });
-  console.log("📌 Parsed Start:", start, "Parsed End:", end);
-  console.log("📌 Final Query:", JSON.stringify(query, null, 2));
-}
-
-
-    const leaves = await Leave.find(query).sort({ fromDate: -1 });
-    console.log("📌 Result Count:", leaves.length); // ✅ how many found
-
-    //res.status(200).json({ items: leaves });
-    res.status(200).json({ items: leaves.map(formatLeaveDates) });
+    res.json({ items: leaves.map(formatLeaveDates) });
   } catch (err) {
     console.error("❌ Filter error:", err);
     res.status(500).json({ error: err.message });
@@ -652,9 +655,34 @@ if (fromDate && toDate) {
 });
 
 
+// ✅ Get approved leaves for a month
+router.get("/approved/month", async (req, res) => {
+  try {
+    const { year, month } = req.query;
 
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0, 23, 59, 59);
 
+    const leaves = await Leave.find({
+      status: "Approved",
+      fromDate: { $lte: end },
+      toDate: { $gte: start },
+    });
 
+    // res.json(leaves.map(l => ({
+    //   employeeId: l.employeeId,
+    //   fromDate: l.fromDate,
+    //   toDate: l.toDate,
+    // })));
+    res.json(leaves.map(l => ({
+  employeeId: l.employeeId,
+  fromDate: formatDateDDMMYYYY(l.fromDate),
+  toDate: formatDateDDMMYYYY(l.toDate),
+})));
 
+  } catch (err) {
+    res.status(500).json({ message: "Error fetching approved leaves" });
+  }
+});
 
 module.exports = router;
